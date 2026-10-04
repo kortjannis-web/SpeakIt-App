@@ -62,7 +62,14 @@ Unten mittig fährt eine kleine Kapsel aus der Mitte auf: oranger Punkt (schwabb
 - Claude Haiku 4.5: ca. 1 $ pro Mio. Eingabe-Token, 5 $ pro Mio. Ausgabe-Token
 - Pro Diktat gehen Prompt und Begriffslisten mit (ca. 2.000 bis 3.000 Token): grob 0,3 bis 0,5 Cent pro Minute Sprechen
 
-## EXE zum Weitergeben
+## Download und Auto-Update
+
+Download für alle (ohne Keys, Empfänger trägt eigene Keys ein):
+https://github.com/kortjannis-web/SpeakIt-App/releases/latest/download/SpeakIt.exe
+
+Jeder Push auf `master` baut per GitHub Actions automatisch eine neue `SpeakIt.exe` und veröffentlicht sie als Release (Version `1.0.<Laufnummer>`). Reine README-Änderungen lösen keinen Build aus. Die installierte App prüft beim Start und danach alle 6 Stunden, lädt eine neuere Version im Hintergrund und setzt sie beim nächsten Start ein. Sofort geht es über den Tray: "Update installieren (Neustart)".
+
+## EXE selbst bauen
 
 ```
 powershell -ExecutionPolicy Bypass -File build.ps1
@@ -79,7 +86,7 @@ Achtung: Keys in einer EXE lassen sich auslesen. Lege dafür eigene Keys an (Gro
 - Windows SmartScreen warnt bei unbekannten Programmen: "Weitere Informationen" → "Trotzdem ausführen".
 - Manche Virenscanner melden Tastatur-Hooks fälschlich. Dann Ausnahme für `SpeakIt.exe` setzen.
 - Deinstallieren: Einstellungen → "Deinstallieren" (Daten in `%APPDATA%\SpeakIt` bleiben, Ordner nach Wunsch löschen).
-- Update: neue EXE einmal öffnen. Läuft die alte noch, vorher im Tray beenden.
+- Updates kommen automatisch (siehe oben). Mitgelieferte Keys werden beim ersten Start in `%APPDATA%\SpeakIt\.env` gesichert und bleiben nach Updates erhalten.
 
 ## Technik
 - Python 3.10+, `keyboard` (Low-Level-Hook mit Unterdrückung), `sounddevice`, `customtkinter`, `pystray`

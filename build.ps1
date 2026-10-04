@@ -10,6 +10,15 @@ if (-not (Test-Path $py)) { throw "Zuerst install.ps1 ausfuehren." }
 & $py -m pip install --quiet pyinstaller
 & $py make_icon.py
 
+# Gleiche Version wie das neueste Release, damit sich diese EXE beim nächsten Release selbst aktualisiert
+$version = "speakitersion.py"
+$versionOld = Get-Content $version -Raw
+try {
+    $tag = (Invoke-RestMethod "https://api.github.com/repos/kortjannis-web/SpeakIt-App/releases/latest").tag_name
+    Set-Content -Path $version -Value "VERSION = `"$($tag.TrimStart('v'))`"" -Encoding utf8
+    Write-Host "Version: $tag"
+} catch { Write-Host "Kein Release gefunden, Version bleibt 0.0.0 (aktualisiert sich beim ersten Release)." }
+
 $bundled = "speakit\bundled.py"
 if ($BundleKeys) {
     $env = @{}
@@ -29,6 +38,7 @@ try {
         --hidden-import pystray._win32 --hidden-import speakit.bundled run_speakit.py
 } finally {
     if (Test-Path $bundled) { Remove-Item $bundled }
+    Set-Content -Path $version -Value $versionOld.TrimEnd() -Encoding utf8
 }
 if (-not (Test-Path "dist\$name.exe")) { throw "Build fehlgeschlagen." }
 Write-Host "Fertig: $PSScriptRoot\dist\$name.exe"

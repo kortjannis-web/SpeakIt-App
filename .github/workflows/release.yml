@@ -1,0 +1,57 @@
+# Jeder Push auf master baut SpeakIt.exe und veröffentlicht sie als Release.
+# Installierte Apps finden das Release beim nächsten Start und aktualisieren sich selbst.
+name: Release
+
+on:
+  push:
+    branches: [master]
+    paths-ignore: ["README.md", ".gitignore"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Abhängigkeiten
+        run: python -m pip install -r requirements.txt pyinstaller
+
+      - name: Version setzen
+        shell: pwsh
+        run: |
+          $v = "1.0.${{ github.run_number }}"
+          Set-Content -Path speakit/version.py -Value "VERSION = `"$v`"" -Encoding utf8
+          "VERSION=$v" >> $env:GITHUB_ENV
+
+      - name: EXE bauen
+        run: |
+          python make_icon.py
+          python -m PyInstaller --noconfirm --clean --onefile --noconsole --name SpeakIt --icon icon.ico --collect-all customtkinter --collect-all sounddevice --collect-all _sounddevice_data --hidden-import pystray._win32 run_speakit.py
+
+      - name: Selbsttest
+        shell: pwsh
+        run: |
+          $p = Start-Process dist/SpeakIt.exe -ArgumentList "--selftest" -Wait -PassThru
+          $out = Get-Content "$env:TEMP/speakit_selftest.txt" -Raw
+          Write-Host $out
+          if (-not $out.StartsWith("OK")) { exit 1 }
+
+      - name: Release veröffentlichen
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $msg = git log -1 --pretty=%s
+          gh release create "v$env:VERSION" dist/SpeakIt.exe --title "SpeakIt $env:VERSION" --notes "$msg"
