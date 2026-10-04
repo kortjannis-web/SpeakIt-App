@@ -8,7 +8,7 @@ from tkinter import ttk
 
 from . import autostart
 from .audio import list_mics
-from .config import VOCAB_PATH, save_env
+from .config import CONTEXTS_PATH, save_env
 from .hotkey import pretty
 
 KEY = "#ff00ff"  # transparente Farbe
@@ -45,6 +45,9 @@ class UI:
 
     def set_state(self, state, text="", hold_ms=0):
         self.call(self._set_state, state, text, hold_ms)
+
+    def on_new_dictation(self):
+        pass
 
     def run(self):
         self.root.mainloop()
@@ -237,6 +240,6 @@ class UI:
 
         btns = ttk.Frame(frm)
         btns.grid(row=11, column=0, columnspan=2, pady=(10, 0))
-        ttk.Button(btns, text="Begriffsliste öffnen", command=lambda: os.startfile(VOCAB_PATH)).pack(side="left", padx=6)
+        ttk.Button(btns, text="Begriffsliste öffnen", command=lambda: os.startfile(CONTEXTS_PATH)).pack(side="left", padx=6)
         ttk.Button(btns, text="Speichern", command=save).pack(side="left", padx=6)
         ttk.Button(btns, text="Abbrechen", command=win.destroy).pack(side="left", padx=6)

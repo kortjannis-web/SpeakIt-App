@@ -4,12 +4,18 @@ import os
 import sys
 from pathlib import Path
 
+FROZEN = bool(getattr(sys, "frozen", False))
 ROOT = Path(__file__).resolve().parent.parent
-CONFIG_PATH = ROOT / "config.json"
-ENV_PATH = ROOT / ".env"
-VOCAB_PATH = ROOT / "vocabulary.txt"
-LOG_PATH = ROOT / "speakit.log"
-FAILED_DIR = ROOT / "failed"
+# Entwicklung: Daten im Projektordner. Als EXE: %APPDATA%\SpeakIt
+DATA = (Path(os.environ.get("APPDATA", str(Path.home()))) / "SpeakIt") if FROZEN else ROOT
+DATA.mkdir(parents=True, exist_ok=True)
+CONFIG_PATH = DATA / "config.json"
+ENV_PATH = DATA / ".env"
+LEGACY_VOCAB_PATH = DATA / "vocabulary.txt"
+CONTEXTS_PATH = DATA / "contexts.json"
+HISTORY_PATH = DATA / "history.db"
+LOG_PATH = DATA / "speakit.log"
+FAILED_DIR = DATA / "failed"
 
 DEFAULTS = {
     "hotkey": ["f9"],
@@ -21,7 +27,7 @@ DEFAULTS = {
     "cleanup_model": "claude-haiku-4-5-20251001",
     "sounds": True,
     "mic": "",
-    "max_seconds": 600,
+    "max_seconds": 720,
 }
 
 
@@ -37,6 +43,12 @@ def setup_logging():
 
 
 def load_env():
+    try:
+        from .bundled import KEYS  # nur in der verteilbaren EXE vorhanden
+        for k, v in KEYS.items():
+            os.environ.setdefault(k, v)
+    except ImportError:
+        pass
     if not ENV_PATH.exists():
         return
     for line in ENV_PATH.read_text(encoding="utf-8").splitlines():
@@ -45,6 +57,16 @@ def load_env():
             continue
         k, v = line.split("=", 1)
         os.environ[k.strip()] = v.strip().strip('"').strip("'")
+
+
+def read_env_file() -> dict:
+    out = {}
+    if ENV_PATH.exists():
+        for line in ENV_PATH.read_text(encoding="utf-8").splitlines():
+            if "=" in line and not line.strip().startswith("#"):
+                k, v = line.split("=", 1)
+                out[k.strip()] = v.strip()
+    return out
 
 
 def save_env(values: dict):
@@ -80,23 +102,3 @@ class Config:
         CONFIG_PATH.write_text(
             json.dumps(self.data, indent=2, ensure_ascii=False), encoding="utf-8"
         )
-
-
-def read_vocabulary():
-    """Gibt (begriffe, ersetzungen, themen) zurueck."""
-    terms, repl, topics = [], [], []
-    if VOCAB_PATH.exists():
-        for line in VOCAB_PATH.read_text(encoding="utf-8").splitlines():
-            line = line.strip()
-            if not line or line.startswith("#"):
-                continue
-            if line.lower().startswith("thema:"):
-                topics.append(line[6:].strip())
-            elif "=>" in line:
-                a, b = (x.strip() for x in line.split("=>", 1))
-                if a and b:
-                    repl.append((a, b))
-                    terms.append(b)
-            else:
-                terms.append(line)
-    return terms, repl, topics

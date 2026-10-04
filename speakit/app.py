@@ -10,8 +10,9 @@ from PIL import Image, ImageDraw
 
 from . import sounds
 from .audio import Recorder, has_speech, to_wav
-from .cleanup import apply_replacements, clean
-from .config import FAILED_DIR, LOG_PATH, VOCAB_PATH, Config, load_env, read_vocabulary
+from .cleanup import clean
+from .config import CONTEXTS_PATH, FAILED_DIR, LOG_PATH, Config, load_env
+from .storage import Contexts, History, apply_replacements, llm_cost, stt_cost
 from .hotkey import HotkeyManager, pretty
 from .paste import active_window_title, paste_text
 from .stt import SttError, transcribe
@@ -39,6 +40,8 @@ class App:
     def __init__(self):
         load_env()
         self.cfg = Config()
+        self.contexts = Contexts()
+        self.history = History()
         self.rec = Recorder()
         self.hk = HotkeyManager(self.on_press, self.on_release, self.cancel)
         self.hk.cancel_armed = lambda: self.recording
@@ -89,7 +92,7 @@ class App:
             ),
             pystray.MenuItem("Einstellungen …", lambda: self.ui.open_settings(), default=True),
             pystray.MenuItem("Letzten Text kopieren", self._copy_last),
-            pystray.MenuItem("Begriffsliste öffnen", lambda: os.startfile(VOCAB_PATH)),
+            pystray.MenuItem("Begriffsliste öffnen", lambda: os.startfile(CONTEXTS_PATH)),
             pystray.MenuItem("Log öffnen", lambda: os.startfile(LOG_PATH)),
             pystray.MenuItem("Beenden", self._quit),
         )
@@ -198,22 +201,28 @@ class App:
         t0 = time.time()
         secs = len(pcm) / 16000
         try:
-            terms, repl, topics = read_vocabulary()
             wav = to_wav(pcm)
-            raw = transcribe(wav, self.cfg["stt_provider"], self.cfg["language"], terms)
+            raw = transcribe(
+                wav, self.cfg["stt_provider"], self.cfg["language"], self.contexts.whisper_terms()
+            )
             t1 = time.time()
             if not raw or raw.lower().strip(" .!?") in HALLUCINATIONS and secs < 4:
                 self.ui.set_state("done", "Nichts erkannt", 1200)
                 return
-            text = raw
+            text, t_in, t_out = raw, 0, 0
             if self.cfg["cleanup"]:
-                text = clean(raw, self.cfg["cleanup_model"], terms, title, topics)
-            text = apply_replacements(text, repl)
+                text, t_in, t_out = clean(
+                    raw, self.cfg["cleanup_model"], self.contexts.llm_context(), title
+                )
+            text = apply_replacements(text, self.contexts.active_repl())
             self.last_text = text
             paste_text(text, self.hk)
+            cost = stt_cost(self.cfg["stt_provider"], secs) + llm_cost(t_in, t_out)
+            self.history.add(raw, text, secs, t_in, t_out, cost)
+            self.ui.call(self.ui.on_new_dictation)
             logging.info(
-                "%.1fs Audio, STT %.1fs, gesamt %.1fs, %d Zeichen",
-                secs, t1 - t0, time.time() - t0, len(text),
+                "%.1fs Audio, STT %.1fs, gesamt %.1fs, %d Zeichen, Token %d/%d, %.4f $",
+                secs, t1 - t0, time.time() - t0, len(text), t_in, t_out, cost,
             )
             self._sound("done")
             if self.pending <= 1:
