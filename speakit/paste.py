@@ -1,4 +1,5 @@
 import ctypes
+import threading
 import time
 
 import pyperclip
@@ -23,12 +24,14 @@ def paste_text(text: str, hk):
     except Exception:
         old = ""
     pyperclip.copy(text)
-    time.sleep(0.05)
+    time.sleep(0.03)
     hk.wait_released()
     hk.send("ctrl+v")
-    time.sleep(0.25)
-    if old:
-        try:
-            pyperclip.copy(old)
-        except Exception:
-            pass
+    if old:  # alte Zwischenablage im Hintergrund zurück, damit der Aufrufer nicht wartet
+        def restore():
+            time.sleep(0.35)
+            try:
+                pyperclip.copy(old)
+            except Exception:
+                pass
+        threading.Thread(target=restore, daemon=True).start()

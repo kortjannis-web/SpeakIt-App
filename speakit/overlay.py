@@ -11,13 +11,15 @@ import math
 import random
 import time
 import tkinter as tk
+import tkinter.font as tkfont
 
 KEY = "#ff00ff"  # transparente Farbe
 BG = "#17171a"
-OUTLINE = "#767c88"  # dünne graue Kontur
+OUTLINE = "#f59e0b"  # dünne orange Kontur
 RED, GREEN, FG, MUTED = "#ef4444", "#22c55e", "#f4f4f5", "#9ca3af"
+DOT = "#f59e0b"  # Aufnahme-Punkt
 LIQUID, LIQUID_HI, LIQUID_BACK = "#f59e0b", "#fde68a", "#fbbf24"
-BASE_W, BASE_H = 138, 30  # Kapselgröße im Aufnahmemodus (Basis-Einheiten, werden mit DPI skaliert)
+BASE_W, BASE_H = 130, 30  # Kapselgröße im Aufnahmemodus (Basis-Einheiten, werden mit DPI skaliert)
 MAX_W = 300
 BARS = 12
 COLS = 56  # Spalten der Wasseroberfläche
@@ -61,12 +63,16 @@ class Overlay:
         self.last = time.monotonic()
         self.levels = collections.deque([0.0] * BARS, maxlen=BARS)
         self.lvl_t = 0.0
+        self.dot_s, self.dot_sv = 0.0, 0.0  # Verformung des Punkts (Wasser-Physik)
+        self.dot_y, self.dot_yv = 0.0, 0.0
+        self.prev_lvl = 0.0
         self.tau = 2.0
         self.busy_t = 0.0
         self._reset_liquid()
 
         self.win = tk.Toplevel(root)
         w = self.win
+        self.timer_font = tkfont.Font(root=root, family="Segoe UI Semibold", size=11)
         w.overrideredirect(True)
         w.attributes("-topmost", True)
         w.configure(bg=KEY)
@@ -155,7 +161,7 @@ class Overlay:
     def _physics(self, dt):
         k = self.k
         target = 1.0 if self.mode == "finish" else min(0.93, 1 - math.exp(-self.busy_t / self.tau))
-        rate = 8.0 if self.mode == "finish" else 2.2
+        rate = 16.0 if self.mode == "finish" else 2.2
         dp = (target - self.p) * min(1.0, dt * rate)
         self.p += dp
         # Einströmen von rechts: Stoß in die rechten Spalten, Wassermasse kippt nach links
@@ -246,7 +252,7 @@ class Overlay:
             self._physics(dt)
             if self.mode == "finish" and self.p > 0.985:
                 if self.close_at == 0.0:
-                    self.close_at = now + 0.18
+                    self.close_at = now + 0.03
                 elif now >= self.close_at:
                     self.mode, self.target = "closing", 0.0  # volle Kapsel schrumpft zur Mitte
         if self.mode in (None, "closing") and self.target == 0.0 and self.e < 0.02:
@@ -255,6 +261,22 @@ class Overlay:
             self.visible = False
             return
         self._draw()
+
+    def _rec_physics(self):
+        """Der Punkt schwabbelt leicht wie ein Wassertropfen, angeregt von der Lautstärke."""
+        now = time.monotonic()
+        dt = min(0.05, now - getattr(self, "_rp_t", now))
+        self._rp_t = now
+        lvl = self.rec.level
+        d = lvl - self.prev_lvl
+        self.prev_lvl = lvl
+        self.dot_sv += d * 16
+        self.dot_yv -= d * 38
+        self.dot_sv += math.sin(now * 2.7) * 0.05 * dt * 20  # sanftes Eigenleben
+        self.dot_sv += (-60 * self.dot_s - 4.5 * self.dot_sv) * dt
+        self.dot_s = max(-0.3, min(0.3, self.dot_s + self.dot_sv * dt))
+        self.dot_yv += (-50 * self.dot_y - 4.0 * self.dot_yv) * dt
+        self.dot_y = max(-2.0 * self.k, min(2.0 * self.k, self.dot_y + self.dot_yv * dt))
 
     def _geometry(self):
         k, e = self.k, self.e
@@ -291,9 +313,12 @@ class Overlay:
         cy = self.H / 2
         left = x1
         if self.mode == "rec":
-            rr = 4 * k
-            dx = left + 15 * k
-            c.create_oval(dx - rr, cy - rr, dx + rr, cy + rr, fill=RED, outline=RED)
+            self._rec_physics()
+            rx = 4.6 * k * (1 + self.dot_s)
+            ry = 4.6 * k * (1 - 0.8 * self.dot_s)
+            dx, dy = left + 15 * k, cy + self.dot_y
+            c.create_oval(dx - rx, dy - ry, dx + rx, dy + ry, fill=DOT, outline=DOT)
+            c.create_oval(dx - 2.4 * k, dy - 2.6 * k, dx - 0.6 * k, dy - 0.9 * k, fill="#fde68a", outline="#fde68a")
             self.lvl_t += 1
             if self.lvl_t % 2 == 0:
                 self.levels.append(self.rec.level)
@@ -302,8 +327,10 @@ class Overlay:
                 x = left + (29 + i * 5) * k
                 c.create_line(x, cy - hh / 2, x, cy + hh / 2, fill=FG, width=max(2, round(2.4 * k)),
                               capstyle="round")
-            c.create_text(left + (29 + BARS * 5 + 3) * k, cy, text=fmt_time(self.rec.seconds), fill=FG,
-                          anchor="w", font=("Segoe UI Semibold", 9))
+            txt = fmt_time(self.rec.seconds)
+            c.create_text(left + (29 + BARS * 5 + 4) * k, cy, text=txt, fill=FG, anchor="w", font=self.timer_font)
+            # Breite passend zum Timer, kein überflüssiger Leerraum rechts
+            self.want_w = (29 + BARS * 5 + 4 + 12) * k + self.timer_font.measure(txt)
         elif self.mode == "msg":
             rr = 4 * k
             dx = left + 15 * k
