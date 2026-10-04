@@ -53,6 +53,7 @@ class Overlay:
         self.k = dpi_scale()
         k = self.k
         self.W, self.H = int(MAX_W * k), int(BASE_H * k)
+        self.lw = max(2, round(k * 1.8))  # Konturstärke
         self.mode = None  # None | rec | busy | finish | msg
         self.text, self.msg_col = "", GREEN
         self.e = 0.0  # Aufklapp-Grad 0..1
@@ -259,9 +260,23 @@ class Overlay:
             return
         self._draw()
 
+    @staticmethod
+    def _capsule(x1, y1, x2, y2, n=20):
+        """Umriss einer Kapsel als Punktliste (zwei Halbkreise, durch Geraden verbunden)."""
+        r = (y2 - y1) / 2
+        cy = (y1 + y2) / 2
+        pts = []
+        for i in range(n + 1):  # rechts, von oben nach unten
+            a = -math.pi / 2 + math.pi * i / n
+            pts += [x2 - r + r * math.cos(a), cy + r * math.sin(a)]
+        for i in range(n + 1):  # links, von unten nach oben
+            a = math.pi / 2 + math.pi * i / n
+            pts += [x1 + r + r * math.cos(a), cy + r * math.sin(a)]
+        return pts
+
     def _geometry(self):
         k, e = self.k, self.e
-        hd = (self.H - 3 * k) * (0.3 + 0.7 * min(1.0, e * 1.25))
+        hd = (self.H - self.lw - 2 * k) * (0.3 + 0.7 * min(1.0, e * 1.25))
         wd = max(hd, self.cur_w * e)
         cx, cy = self.W / 2, self.H / 2
         return cx - wd / 2, cy - hd / 2, cx + wd / 2, cy + hd / 2
@@ -279,16 +294,13 @@ class Overlay:
         x1, y1, x2, y2 = self._geometry()
         d = y2 - y1
         r = d / 2
-        lw = max(1, round(k * 0.8))
-        c.create_oval(x1, y1, x1 + d, y2, fill=BG, outline=BG)
-        c.create_oval(x2 - d, y1, x2, y2, fill=BG, outline=BG)
-        c.create_rectangle(x1 + r, y1, x2 - r, y2, fill=BG, outline=BG)
+        lw = self.lw
+        shape = self._capsule(x1, y1, x2, y2)
+        c.create_polygon(shape, fill=BG, outline=BG)
         if self.mode in ("busy", "finish", "closing"):
             self._draw_liquid(x1, y1, x2, y2)
-        c.create_arc(x1, y1, x1 + d, y2, start=90, extent=180, style="arc", outline=OUTLINE, width=lw)
-        c.create_arc(x2 - d, y1, x2, y2, start=270, extent=180, style="arc", outline=OUTLINE, width=lw)
-        c.create_line(x1 + r, y1, x2 - r, y1, fill=OUTLINE, width=lw)
-        c.create_line(x1 + r, y2, x2 - r, y2, fill=OUTLINE, width=lw)
+        # Kontur als ein geschlossener Pfad, damit zwischen Bögen und Geraden keine Lücke bleibt
+        c.create_polygon(shape, fill="", outline=OUTLINE, width=lw, joinstyle="round")
         if self.e < 0.96:
             return
         cy = self.H / 2
