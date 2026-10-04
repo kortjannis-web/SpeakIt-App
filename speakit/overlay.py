@@ -55,7 +55,7 @@ class Overlay:
         self.k = dpi_scale()
         k = self.k
         self.W, self.H = int(MAX_W * k), int(BASE_H * k)
-        self.lw = max(2, round(k * 1.8))  # Konturstärke
+        self.lw = max(1, round(k * 1.8) - 1)  # Konturstärke
         self.mode = None  # None | rec | busy | finish | msg
         self.text, self.msg_col = "", GREEN
         self.e = 0.0  # Aufklapp-Grad 0..1
