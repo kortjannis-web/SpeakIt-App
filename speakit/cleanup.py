@@ -34,9 +34,7 @@ def clean(raw: str, model: str, terms: list[str], app_title: str, topics: list[s
     if terms:
         system += "\n\nBegriffsliste: " + ", ".join(terms)
     if topics:
-        system += "
-
-Bekannte Themen des Nutzers (Hilfe für die Kontextkorrektur, das aktuelle Thema ergibt sich aus dem Text): " + "; ".join(topics)
+        system += "\n\nBekannte Themen des Nutzers (Hilfe für die Kontextkorrektur, das aktuelle Thema ergibt sich aus dem Text): " + "; ".join(topics)
     if app_title:
         system += f"\n\nAktives Fenster (nur Kontext): {app_title[:80]}"
     try:
