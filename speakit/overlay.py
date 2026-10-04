@@ -63,9 +63,6 @@ class Overlay:
         self.last = time.monotonic()
         self.levels = collections.deque([0.0] * BARS, maxlen=BARS)
         self.lvl_t = 0.0
-        self.dot_s, self.dot_sv = 0.0, 0.0  # Verformung des Punkts (Wasser-Physik)
-        self.dot_y, self.dot_yv = 0.0, 0.0
-        self.prev_lvl = 0.0
         self.tau = 2.0
         self.busy_t = 0.0
         self._reset_liquid()
@@ -80,10 +77,10 @@ class Overlay:
         wa = work_area()
         if wa:
             x = (wa[0] + wa[2]) // 2 - self.W // 2
-            y = wa[3] - self.H - int(6 * k)
+            y = wa[3] - self.H - int(14 * k)
         else:
             x = (w.winfo_screenwidth() - self.W) // 2
-            y = w.winfo_screenheight() - self.H - int(60 * k)
+            y = w.winfo_screenheight() - self.H - int(68 * k)
         w.geometry(f"{self.W}x{self.H}+{x}+{y}")
         self.cv = tk.Canvas(w, width=self.W, height=self.H, bg=KEY, highlightthickness=0)
         self.cv.pack()
@@ -262,25 +259,9 @@ class Overlay:
             return
         self._draw()
 
-    def _rec_physics(self):
-        """Der Punkt schwabbelt leicht wie ein Wassertropfen, angeregt von der Lautstärke."""
-        now = time.monotonic()
-        dt = min(0.05, now - getattr(self, "_rp_t", now))
-        self._rp_t = now
-        lvl = self.rec.level
-        d = lvl - self.prev_lvl
-        self.prev_lvl = lvl
-        self.dot_sv += d * 16
-        self.dot_yv -= d * 38
-        self.dot_sv += math.sin(now * 2.7) * 0.05 * dt * 20  # sanftes Eigenleben
-        self.dot_sv += (-60 * self.dot_s - 4.5 * self.dot_sv) * dt
-        self.dot_s = max(-0.3, min(0.3, self.dot_s + self.dot_sv * dt))
-        self.dot_yv += (-50 * self.dot_y - 4.0 * self.dot_yv) * dt
-        self.dot_y = max(-2.0 * self.k, min(2.0 * self.k, self.dot_y + self.dot_yv * dt))
-
     def _geometry(self):
         k, e = self.k, self.e
-        hd = self.H * (0.3 + 0.7 * min(1.0, e * 1.25))
+        hd = (self.H - 3 * k) * (0.3 + 0.7 * min(1.0, e * 1.25))
         wd = max(hd, self.cur_w * e)
         cx, cy = self.W / 2, self.H / 2
         return cx - wd / 2, cy - hd / 2, cx + wd / 2, cy + hd / 2
@@ -313,12 +294,8 @@ class Overlay:
         cy = self.H / 2
         left = x1
         if self.mode == "rec":
-            self._rec_physics()
-            rx = 4.6 * k * (1 + self.dot_s)
-            ry = 4.6 * k * (1 - 0.8 * self.dot_s)
-            dx, dy = left + 15 * k, cy + self.dot_y
-            c.create_oval(dx - rx, dy - ry, dx + rx, dy + ry, fill=DOT, outline=DOT)
-            c.create_oval(dx - 2.4 * k, dy - 2.6 * k, dx - 0.6 * k, dy - 0.9 * k, fill="#fde68a", outline="#fde68a")
+            dx, dy = left + 15 * k, cy
+            c.create_oval(dx - 4.6 * k, dy - 4.6 * k, dx + 4.6 * k, dy + 4.6 * k, fill=DOT, outline=DOT)
             self.lvl_t += 1
             if self.lvl_t % 2 == 0:
                 self.levels.append(self.rec.level)
