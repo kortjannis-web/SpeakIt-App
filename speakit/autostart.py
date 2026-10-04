@@ -3,9 +3,12 @@ import subprocess
 import sys
 from pathlib import Path
 
-from .config import ROOT
+from .config import FROZEN, ROOT
 
-LNK = Path(os.environ.get("APPDATA", "")) / "Microsoft/Windows/Start Menu/Programs/Startup/SpeakIt.lnk"
+STARTUP = Path(os.environ.get("APPDATA", "")) / "Microsoft/Windows/Start Menu/Programs/Startup"
+LNK = STARTUP / "SpeakIt.lnk"
+INSTALL_DIR = Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "SpeakIt"
+INSTALLED_EXE = INSTALL_DIR / "SpeakIt.exe"
 
 
 def _pythonw():
@@ -21,16 +24,24 @@ def _ps(script):
     )
 
 
+def make_shortcut(lnk: Path, background=True):
+    if FROZEN:
+        target, args, workdir = str(INSTALLED_EXE), "--background" if background else "", str(INSTALL_DIR)
+    else:
+        target, args, workdir = _pythonw(), "-m speakit" + (" --background" if background else ""), str(ROOT)
+    _ps(
+        f"$s=(New-Object -ComObject WScript.Shell).CreateShortcut('{lnk}');"
+        f"$s.TargetPath='{target}';$s.Arguments='{args}';$s.WorkingDirectory='{workdir}';"
+        f"$s.IconLocation='{target},0';$s.WindowStyle=7;$s.Save()"
+    )
+
+
 def is_enabled():
     return LNK.exists()
 
 
 def set_enabled(on: bool):
     if on:
-        _ps(
-            f"$s=(New-Object -ComObject WScript.Shell).CreateShortcut('{LNK}');"
-            f"$s.TargetPath='{_pythonw()}';$s.Arguments='-m speakit --background';"
-            f"$s.WorkingDirectory='{ROOT}';$s.WindowStyle=7;$s.Save()"
-        )
+        make_shortcut(LNK)
     elif LNK.exists():
         LNK.unlink()
