@@ -1,4 +1,5 @@
 """Kontexte (Begriffe + Korrekturen) und Verlauf mit Token-Statistik."""
+import contextlib
 import json
 import re
 import sqlite3
@@ -22,6 +23,20 @@ def stt_cost(provider: str, secs: float) -> float:
 
 def llm_cost(tok_in: int, tok_out: int) -> float:
     return tok_in * HAIKU_IN + tok_out * HAIKU_OUT
+
+
+def cleanup_comparison(words=10000, per_dictation=125, overhead_tok=2500, wpm=140):
+    """Schätzung: Kosten pro `words` Wörter mit und ohne Haiku (overhead_tok = Prompt + Begriffslisten pro Diktat)."""
+    groq = words / wpm / 60 * GROQ_PER_HOUR
+    n = words / per_dictation
+    text_tok = words * 1.5
+    haiku = (n * overhead_tok + text_tok) * HAIKU_IN + text_tok * HAIKU_OUT
+    return {"n": int(n), "groq": groq, "haiku": haiku, "with": groq + haiku, "without": groq,
+            "factor": (groq + haiku) / groq}
+
+
+# Wartezeit nach dem Loslassen in Sekunden (aus eigenen Messungen: Whisper ca. 1 bis 1,6 s, Haiku + Einfügen ca. 2,5 s)
+WAIT = {"short": (15, 3.0, 1.3), "long": (120, 4.2, 1.8)}  # (Wörter, mit Haiku, ohne Haiku)
 
 
 # ---------------------------------------------------------------- Kontexte
@@ -251,6 +266,15 @@ def apply_replacements(text: str, repl) -> str:
 
 
 # ---------------------------------------------------------------- Verlauf
+def period_starts(now=None) -> dict:
+    """Beginn von Heute (0 Uhr) und Monat (1., 0 Uhr). Gesamt beginnt nie neu."""
+    import datetime
+    now = now or datetime.datetime.now()
+    day = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    month = day.replace(day=1)
+    return {"Heute": day.timestamp(), "Monat": month.timestamp(), "Gesamt": 0}
+
+
 class History:
     def __init__(self):
         self.lock = threading.Lock()
@@ -260,14 +284,21 @@ class History:
                 "raw TEXT, text TEXT, audio_s REAL, tok_in INTEGER, tok_out INTEGER, cost REAL)"
             )
 
+    @contextlib.contextmanager
     def _db(self):
-        return sqlite3.connect(HISTORY_PATH)
+        """Verbindung mit Commit und sicherem Schließen (sonst bleibt die Datei unter Windows gesperrt)."""
+        db = sqlite3.connect(HISTORY_PATH)
+        try:
+            with db:
+                yield db
+        finally:
+            db.close()
 
-    def add(self, raw, text, audio_s, tok_in, tok_out, cost) -> int:
+    def add(self, raw, text, audio_s, tok_in, tok_out, cost, ts=None) -> int:
         with self.lock, self._db() as db:
             cur = db.execute(
                 "INSERT INTO dictations (ts, raw, text, audio_s, tok_in, tok_out, cost) VALUES (?,?,?,?,?,?,?)",
-                (time.time(), raw, text, audio_s, tok_in, tok_out, cost),
+                (ts if ts is not None else time.time(), raw, text, audio_s, tok_in, tok_out, cost),
             )
             return cur.lastrowid
 

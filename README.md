@@ -38,12 +38,19 @@ Ohne Anthropic-Key funktioniert SpeakIt weiter, nur ohne Glättung und Kontextko
 - Das Overlay unten zeigt Pegel und Sekundenticker, danach den Status.
 - Sprachbefehle im Diktat: "neue Zeile", "neuer Absatz", "Punkt", "Komma", "Fragezeichen".
 
+## Anzeige beim Sprechen
+
+Unten mittig fährt eine kleine Kapsel aus der Mitte auf: roter Punkt, runde Pegelbalken, Sekundenticker. Beim Verarbeiten füllt sich eine orange Flüssigkeit (Wellen, Schwappen, Spritzer) bis zur Decke. Ist sie voll, ist der Text eingefügt und die Kapsel klappt wieder zu.
+
 ## Fenster
 
-- **Verlauf**: letzte Diktate, kopieren, "Original" ansehen. Wort anklicken oder mehrere markieren → "Korrigieren …": falsch/richtig eintragen, Kontext wählen. SpeakIt ersetzt das künftig automatisch und gibt es Whisper und Claude als Hinweis mit.
-- **Kontexte**: Themen mit Begriffen und festen Korrekturen (Re:Zero, Fantasy, Webdesign, SEO & GEO, Business, KI & Cloud, eigene). Aktive Kontexte gehen an Whisper und Claude. Inaktive kennt Claude trotzdem und nutzt sie nur, wenn das Thema offensichtlich passt.
-- **Statistik**: Diktate, Wörter, Sprechzeit, Token, geschätzte Kosten für Heute, Monat, Gesamt. Links unten steht es immer.
-- **Einstellungen**: Taste, Modus, Sprache, Mikrofon, Anbieter, Töne, Autostart, Keys.
+- **Schalter links oben**: SpeakIt an/aus. Aus heißt, die Taste wird nicht mehr abgefangen. Auch im Tray ("SpeakIt aktiv").
+- **Nachbearbeitung** (zweiter Schalter): Claude Haiku glättet den Text. Aus ist bis zu 2x schneller und deutlich günstiger, dafür Rohtext. Der Vergleich steht in den Einstellungen.
+- **Verlauf**: letzte Diktate, kopieren, "Original" ansehen. Jedes Wort ist anklickbar (oder mehrere markieren): richtiges Wort eintragen, Kontext wählen, SpeakIt ersetzt es künftig automatisch.
+- **Kontexte**: Themen mit Begriffen und festen Korrekturen (Re:Zero, Fantasy, Webdesign, SEO & GEO, Business, KI & Cloud, eigene). Aktive gehen an Whisper und Claude, inaktive kennt Claude und nutzt sie nur bei passendem Thema.
+- **Statistik**: Diktate, Wörter, Sprechzeit, Token, Kosten für Heute, Monat, Gesamt. Heute setzt sich um 0 Uhr zurück, Monat am 1., Gesamt nie. Links unten steht es immer. Test: `python -m unittest tests.test_stats`.
+- **Einstellungen**: Taste oder Tastenkombination, Modus, Sprache, Mikrofon, Anbieter, 8 Klang-Presets (Sanft, Blub, Tropfen, Klack, Marimba, Glas, Pop, Pad), Autostart, Keys.
+- **Tutorial**: öffnet sich beim ersten Start, danach über "Tutorial anzeigen" links unten.
 
 ## Kosten (Listenpreise aus dem Gedächtnis, vor Nutzung prüfen)
 

@@ -75,6 +75,8 @@ class App:
             self.ui.open_window("Einstellungen")
         elif not background:
             self.ui.open_window("Verlauf")
+        if not self.cfg["tutorial_done"] and (not background or no_key):
+            self.ui.call(self.ui.win.open_tutorial)
         logging.info("SpeakIt läuft, Taste: %s", pretty(self.cfg["hotkey"]))
         self.ui.run()
 
@@ -132,6 +134,7 @@ class App:
 
     def _toggle_cleanup(self):
         self.cfg.set(cleanup=not self.cfg["cleanup"])
+        self.ui.call(self.ui.win.sync_enabled)
 
     def _copy_last(self):
         if self.last_text:
@@ -220,7 +223,8 @@ class App:
             return
         self.pending += 1
         self._tray_color("#d97706")
-        eta = 1.5 + len(pcm) / 16000 * 0.05
+        secs_ = len(pcm) / 16000
+        eta = (1.6 + secs_ * 0.04) if self.cfg["cleanup"] else (0.8 + secs_ * 0.02)
         self.ui.set_state("busy", f"{eta:.1f}")
         self.pool.submit(self._process, pcm, title)
 

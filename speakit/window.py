@@ -1,5 +1,6 @@
 """Hauptfenster: Verlauf mit Wort-Korrektur, Kontexte, Statistik, Einstellungen."""
 import datetime
+import math
 import os
 import tkinter as tk
 
@@ -9,7 +10,8 @@ from . import autostart, sounds
 from .audio import list_mics
 from .config import DATA, FROZEN, read_env_file, save_env
 from .hotkey import pretty
-from .storage import _split
+from .overlay import dpi_scale
+from .storage import WAIT, _split, cleanup_comparison, period_starts
 
 BG, SIDE, CARD, LINE = "#F4F1EA", "#ECE8DF", "#FFFFFF", "#E3DED2"
 TXT, MUT, ACC, ACC_H, GREEN, RED = "#1D1C1A", "#7B766B", "#1D1C1A", "#3A3835", "#2E7D5B", "#C2410C"
@@ -44,6 +46,7 @@ class MainWindow:
         self.sel_ctx = "general"
         self._pending = None
         self.last_ctx = "general"
+        self.tut = None
         self.hist_limit = 30
 
     # ------------------------------------------------------------ Aufbau
@@ -72,6 +75,16 @@ class MainWindow:
         self.power_label.pack(side="left", padx=(14, 0), pady=12)
         ctk.CTkSwitch(pw, text="", variable=self.enabled_var, command=self._on_power, width=52,
                       switch_width=46, switch_height=24, progress_color=GREEN).pack(side="right", padx=14)
+        self.clean_var = ctk.BooleanVar(value=bool(self.app.cfg["cleanup"]))
+        cl = ctk.CTkFrame(side, fg_color=CARD, corner_radius=14, border_width=1, border_color=LINE)
+        cl.pack(fill="x", padx=12, pady=(0, 14))
+        top = ctk.CTkFrame(cl, fg_color="transparent")
+        top.pack(fill="x")
+        ctk.CTkLabel(top, text="Nachbearbeitung", font=self.f_n, text_color=TXT).pack(side="left", padx=(14, 0), pady=(10, 0))
+        ctk.CTkSwitch(top, text="", variable=self.clean_var, command=self._on_clean, width=44, switch_width=40,
+                      switch_height=22, progress_color=GREEN).pack(side="right", padx=(0, 10), pady=(10, 0))
+        self.clean_hint = ctk.CTkLabel(cl, text="", font=self.f_s, text_color=MUT, justify="left", wraplength=170)
+        self.clean_hint.pack(anchor="w", padx=14, pady=(2, 10))
         self.nav = {}
         for name in PAGES:
             b = ctk.CTkButton(
@@ -94,6 +107,9 @@ class MainWindow:
             lab.pack(anchor="w")
             self.mini_rows[key] = lab
         ctk.CTkLabel(self.mini, text="", height=4).pack()
+        ctk.CTkButton(side, text="Tutorial anzeigen", height=34, corner_radius=12, font=self.f_s, fg_color="transparent",
+                      hover_color=SEL, text_color=TXT, border_width=1, border_color=LINE,
+                      command=self.open_tutorial).pack(side="bottom", fill="x", padx=12, pady=(0, 8))
 
         self.content = ctk.CTkFrame(r, fg_color=BG, corner_radius=0)
         self.content.pack(side="left", fill="both", expand=True)
@@ -105,6 +121,7 @@ class MainWindow:
         self._build_stats()
         self._build_settings()
         self._power_text()
+        self._clean_text()
         self.built = True
 
     def _title(self, parent, title, sub=""):
@@ -154,10 +171,204 @@ class MainWindow:
         self.side_info.configure(text=f"Taste: {pretty(self.app.cfg['hotkey'])}")
         self.refresh_mini()
 
+    # ------------------------------------------------------------ Tutorial
+    def open_tutorial(self):
+        if not self.built:
+            self.build()
+        if self.tut is not None and self.tut.winfo_exists():
+            self.tut.lift()
+            return
+        key = pretty(self.app.cfg["hotkey"])
+        steps = [
+            ("Willkommen bei SpeakIt",
+             "SpeakIt schreibt, was du sagst. In jedes Textfeld, in jedem Programm: Mails, Chats, Editor, Browser. "
+             "Dieses kurze Tutorial zeigt dir in fünf Schritten, wie es geht.", self._ill_welcome),
+            ("Taste halten und sprechen",
+             f"Halte {key} gedrückt, sprich und lass los. Der Text erscheint sofort dort, wo dein Cursor steht. "
+             "Tippst du die Taste nur kurz an, läuft die Aufnahme weiter, bis du sie nochmal tippst. "
+             "Mit Esc brichst du ab.", self._ill_key),
+            ("Die kleine Anzeige",
+             "Unten in der Mitte erscheint beim Sprechen eine kleine Kapsel mit Pegel und Sekundenticker. "
+             "Danach füllt sich eine orange Anzeige. Ist sie bis oben voll, ist dein Text fertig und eingefügt.",
+             self._ill_pill),
+            ("SpeakIt läuft im Hintergrund",
+             "Das Fenster kannst du schließen, SpeakIt bleibt aktiv. Du findest es unten rechts neben der Uhr: "
+             "Klicke dort auf den kleinen Pfeil (1), dann auf das Mikrofon-Symbol (2). Doppelklick öffnet das Fenster, "
+             "Rechtsklick zeigt das Menü mit An/Aus und Beenden.", self._ill_tray),
+            ("SpeakIt lernt mit",
+             "Im Verlauf klickst du ein falsch verstandenes Wort an, trägst das richtige ein und wählst einen Kontext, "
+             "zum Beispiel Re:Zero oder Webdesign. Danach erkennt SpeakIt es dauerhaft richtig. "
+             "Mit dem Schalter oben links schaltest du SpeakIt ganz aus, mit dem zweiten die Nachbearbeitung.",
+             self._ill_learn),
+        ]
+        dlg = self.tut = ctk.CTkToplevel(self.root)
+        dlg.title("SpeakIt Tutorial")
+        dlg.configure(fg_color=BG)
+        w, h = 720, 520
+        dlg.geometry(f"{w}x{h}+{self.root.winfo_x() + 120}+{self.root.winfo_y() + 40}")
+        dlg.transient(self.root)
+        dlg.after(150, lambda: (dlg.lift(), dlg.focus_force()))
+        body = ctk.CTkFrame(dlg, fg_color="transparent")
+        body.pack(fill="both", expand=True)
+        state = {"i": 0}
+
+        def finish():
+            self.app.cfg.set(tutorial_done=True)
+            dlg.destroy()
+            self.tut = None
+
+        def render():
+            for ch in body.winfo_children():
+                ch.destroy()
+            i = state["i"]
+            title, text, ill = steps[i]
+            ctk.CTkLabel(body, text=f"Schritt {i + 1} von {len(steps)}", font=self.f_s, text_color=MUT).pack(
+                anchor="w", padx=34, pady=(26, 0))
+            ctk.CTkLabel(body, text=title, font=self.f_title, text_color=TXT).pack(anchor="w", padx=34, pady=(0, 14))
+            card = ctk.CTkFrame(body, fg_color=CARD, corner_radius=16, border_width=1, border_color=LINE)
+            card.pack(fill="x", padx=34)
+            k = dpi_scale()
+            cv = tk.Canvas(card, width=int(610 * k), height=int(170 * k), bg=CARD, highlightthickness=0)
+            cv.pack(padx=12, pady=12)
+            ill(cv, k)
+            ctk.CTkLabel(body, text=text, font=self.f_n, text_color=TXT, wraplength=640, justify="left").pack(
+                anchor="w", padx=34, pady=(18, 0))
+            foot = ctk.CTkFrame(body, fg_color="transparent")
+            foot.pack(side="bottom", fill="x", padx=34, pady=22)
+            ctk.CTkLabel(foot, text="  ".join("●" if n == i else "○" for n in range(len(steps))),
+                         font=self.f_n, text_color=MUT).pack(side="left")
+            last = i == len(steps) - 1
+            self._btn(foot, "Los geht's" if last else "Weiter",
+                      finish if last else (lambda: (state.update(i=i + 1), render()))).pack(side="right")
+            if i > 0:
+                self._btn(foot, "Zurück", lambda: (state.update(i=i - 1), render()), primary=False).pack(
+                    side="right", padx=10)
+            else:
+                self._btn(foot, "Überspringen", finish, primary=False).pack(side="right", padx=10)
+
+        dlg.protocol("WM_DELETE_WINDOW", finish)
+        render()
+
+    # ---- Zeichnungen für das Tutorial (alles in Basis-Pixeln, k = DPI-Faktor)
+    def _capsule(self, c, k, x, y, w, h, fill="#17171a", outline="#767c88"):
+        r = h / 2
+        c.create_oval(x, y, x + h, y + h, fill=fill, outline=fill)
+        c.create_oval(x + w - h, y, x + w, y + h, fill=fill, outline=fill)
+        c.create_rectangle(x + r, y, x + w - r, y + h, fill=fill, outline=fill)
+        c.create_arc(x, y, x + h, y + h, start=90, extent=180, style="arc", outline=outline)
+        c.create_arc(x + w - h, y, x + w, y + h, start=270, extent=180, style="arc", outline=outline)
+        c.create_line(x + r, y, x + w - r, y, fill=outline)
+        c.create_line(x + r, y + h, x + w - r, y + h, fill=outline)
+
+    def _ill_welcome(self, c, k):
+        c.create_oval(255 * k, 20 * k, 355 * k, 120 * k, fill=ACC, outline=ACC)
+        c.create_rectangle(293 * k, 40 * k, 317 * k, 82 * k, fill="white", outline="white")
+        c.create_oval(293 * k, 32 * k, 317 * k, 56 * k, fill="white", outline="white")
+        c.create_oval(293 * k, 66 * k, 317 * k, 90 * k, fill="white", outline="white")
+        c.create_arc(279 * k, 55 * k, 331 * k, 105 * k, start=180, extent=180, style="arc", outline="white",
+                     width=int(4 * k))
+        c.create_text(305 * k, 146 * k, text="Sprich. SpeakIt tippt.", fill=TXT, font=("Segoe UI Semibold", 13))
+
+    def _ill_key(self, c, k):
+        key = pretty(self.app.cfg["hotkey"])
+        wd = max(110, 24 + 11 * len(key))
+        x = 305 - wd / 2
+        c.create_rectangle(x * k, 40 * k, (x + wd) * k, 112 * k, fill="#D8D2C4", outline="#D8D2C4")
+        c.create_rectangle(x * k, 32 * k, (x + wd) * k, 100 * k, fill="#FFFFFF", outline="#8A8578", width=2)
+        c.create_text(305 * k, 66 * k, text=key, fill=TXT, font=("Segoe UI Semibold", 15))
+        c.create_text(120 * k, 70 * k, text="halten\nund sprechen", fill=MUT, font=("Segoe UI", 11), justify="center")
+        c.create_text(490 * k, 70 * k, text="loslassen\nText erscheint", fill=MUT, font=("Segoe UI", 11), justify="center")
+        c.create_text(305 * k, 140 * k, text="kurz tippen = Aufnahme läuft, nochmal tippen = Ende", fill=MUT,
+                      font=("Segoe UI", 11))
+
+    def _ill_pill(self, c, k):
+        # links: Aufnahme
+        self._capsule(c, k, 30 * k, 50 * k, 138 * k, 30 * k)
+        c.create_oval(41 * k, 61 * k, 49 * k, 69 * k, fill="#ef4444", outline="#ef4444")
+        for i, hh in enumerate([4, 8, 13, 7, 15, 10, 5, 12, 8, 14, 6, 9]):
+            x = (58 + i * 5) * k
+            c.create_line(x, (65 - hh / 2) * k, x, (65 + hh / 2) * k, fill="#f4f4f5", width=int(2.4 * k),
+                          capstyle="round")
+        c.create_text(128 * k, 65 * k, text="0:07", fill="#f4f4f5", anchor="w", font=("Segoe UI Semibold", 9))
+        c.create_text(99 * k, 112 * k, text="Aufnahme", fill=MUT, font=("Segoe UI", 11))
+        # Mitte: Pfeil
+        c.create_text(228 * k, 62 * k, text="→", fill=MUT, font=("Segoe UI", 20))
+        # Mitte/rechts: Flüssigkeit halb und voll
+        for cx, level, label in ((330, 0.5, "Verarbeitung"), (510, 1.0, "fertig")):
+            x0 = cx - 69
+            self._capsule(c, k, x0 * k, 50 * k, 138 * k, 30 * k)
+            if level < 1:
+                pts = []
+                for j in range(0, 33):
+                    xx = x0 + 4 + (130 * j / 32)
+                    yy = 78 - 28 * level - 2.2 * math.sin(j / 3.2) - 1.3 * math.sin(j / 1.7 + 1)
+                    pts += [xx * k, yy * k]
+                pts += [(x0 + 134) * k, 78 * k, (x0 + 4) * k, 78 * k]
+                c.create_polygon(pts, fill="#f59e0b", outline="#f59e0b")
+            else:
+                self._capsule(c, k, x0 * k, 50 * k, 138 * k, 30 * k, fill="#f59e0b", outline="#767c88")
+            c.create_text(cx * k, 112 * k, text=label, fill=MUT, font=("Segoe UI", 11))
+        c.create_text(420 * k, 62 * k, text="→", fill=MUT, font=("Segoe UI", 20))
+
+    def _ill_tray(self, c, k):
+        W, H = 610, 170
+        c.create_rectangle(0, 128 * k, W * k, H * k, fill="#1f2937", outline="#1f2937")  # Taskleiste
+        for i in range(5):
+            c.create_oval((20 + i * 34) * k, 138 * k, (40 + i * 34) * k, 158 * k, fill="#374151", outline="#374151")
+        # Uhr
+        c.create_text(572 * k, 143 * k, text="16:40", fill="#e5e7eb", font=("Segoe UI", 10))
+        c.create_text(572 * k, 157 * k, text="04.10.2026", fill="#9ca3af", font=("Segoe UI", 8))
+        # Pfeil (1)
+        ax, ay = 478, 143
+        c.create_text(ax * k, ay * k, text="^", fill="#e5e7eb", font=("Segoe UI Semibold", 14))
+        c.create_oval((ax - 17) * k, (ay - 15) * k, (ax + 17) * k, (ay + 15) * k, outline="#ef4444", width=int(2.5 * k))
+        c.create_text((ax - 52) * k, 112 * k, text="1  Hier klicken", fill="#ef4444", font=("Segoe UI Semibold", 11))
+        # Flyout mit Symbolen (2)
+        fx, fy, fw, fh = 372, 34, 190, 62
+        c.create_rectangle(fx * k, fy * k, (fx + fw) * k, (fy + fh) * k, fill="#111827", outline="#4b5563")
+        for i, col in enumerate(("#6b7280", "#6b7280", "#6b7280")):
+            c.create_oval((fx + 16 + i * 38) * k, (fy + 14) * k, (fx + 40 + i * 38) * k, (fy + 38) * k, fill=col,
+                          outline=col)
+        mx, my = fx + 16 + 3 * 38 + 12, fy + 26
+        c.create_oval((mx - 13) * k, (my - 13) * k, (mx + 13) * k, (my + 13) * k, fill="#f5f5f4", outline="#22c55e",
+                      width=int(2.5 * k))
+        c.create_rectangle((mx - 3) * k, (my - 8) * k, (mx + 3) * k, (my + 3) * k, fill="#1D1C1A", outline="#1D1C1A")
+        c.create_arc((mx - 7) * k, (my - 4) * k, (mx + 7) * k, (my + 8) * k, start=180, extent=180, style="arc",
+                     outline="#1D1C1A", width=int(1.6 * k))
+        c.create_text(fx * k, (fy - 14) * k, text="2  SpeakIt (Mikrofon-Symbol)", fill="#16a34a", anchor="w",
+                      font=("Segoe UI Semibold", 11))
+        c.create_text(24 * k, 62 * k, anchor="w", fill=MUT, font=("Segoe UI", 11), justify="left",
+                      text="Doppelklick auf das Symbol\nöffnet dieses Fenster.\nRechtsklick zeigt das Menü\nmit An/Aus und Beenden.")
+
+    def _ill_learn(self, c, k):
+        c.create_text(30 * k, 50 * k, text="… auch Subaru und ", fill=TXT, anchor="w", font=("Segoe UI", 15))
+        c.create_rectangle(212 * k, 38 * k, 322 * k, 62 * k, fill="#EFE9DA", outline="#EFE9DA")
+        c.create_text(217 * k, 50 * k, text="Petelgeuse", fill=TXT, anchor="w", font=("Segoe UI", 15))
+        c.create_line(214 * k, 62 * k, 320 * k, 62 * k, fill="#ef4444", width=int(2 * k))
+        c.create_text(330 * k, 50 * k, text=" wichtig.", fill=TXT, anchor="w", font=("Segoe UI", 15))
+        c.create_text(266 * k, 82 * k, text="↓ anklicken", fill=MUT, font=("Segoe UI", 11))
+        x, y, w, h = 150, 98, 310, 58
+        c.create_rectangle(x * k, y * k, (x + w) * k, (y + h) * k, fill=BG, outline=LINE)
+        c.create_text((x + 14) * k, (y + 16) * k, text="Richtig:  Betelgeuse", fill=TXT, anchor="w",
+                      font=("Segoe UI Semibold", 12))
+        c.create_text((x + 14) * k, (y + 40) * k, text="Kontext:  Re:Zero      ✓ künftig automatisch ersetzen", fill=MUT,
+                      anchor="w", font=("Segoe UI", 10))
+
     def _on_power(self):
         on = bool(self.enabled_var.get())
         self.app.set_enabled(on)
         self._power_text()
+
+    def _on_clean(self):
+        self.app.cfg.set(cleanup=bool(self.clean_var.get()))
+        self.app.refresh_tray()
+        self._clean_text()
+
+    def _clean_text(self):
+        on = bool(self.clean_var.get())
+        self.clean_hint.configure(
+            text="An: Füllwörter raus, Zeichensetzung, Kontextkorrektur." if on
+            else f"Aus: Rohtext, bis zu 2x schneller und ca. {cleanup_comparison()['factor']:.0f}x günstiger.")
 
     def _power_text(self):
         on = bool(self.enabled_var.get())
@@ -168,16 +379,12 @@ class MainWindow:
         """Wird vom Tray aufgerufen, wenn dort umgeschaltet wurde."""
         if self.built:
             self.enabled_var.set(bool(self.app.cfg["enabled"]))
+            self.clean_var.set(bool(self.app.cfg["cleanup"]))
             self._power_text()
+            self._clean_text()
 
     def refresh_mini(self):
-        now = datetime.datetime.now()
-        starts = {
-            "Heute": now.replace(hour=0, minute=0, second=0, microsecond=0).timestamp(),
-            "Monat": now.replace(day=1, hour=0, minute=0, second=0, microsecond=0).timestamp(),
-            "Gesamt": 0,
-        }
-        for key, since in starts.items():
+        for key, since in period_starts().items():
             st = self.app.history.stats(since)
             money = f"{st['cost']:.3f}".replace(".", ",")
             words = f"{int(st['words']):,}".replace(",", ".")
@@ -493,10 +700,9 @@ class MainWindow:
     def refresh_stats(self):
         for w in self.stat_box.winfo_children():
             w.destroy()
-        now = datetime.datetime.now()
-        today = now.replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
-        month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0).timestamp()
-        for i, (title, since) in enumerate((("Heute", today), ("Dieser Monat", month), ("Gesamt", 0))):
+        starts = period_starts()
+        for i, (title, since) in enumerate((("Heute", starts["Heute"]), ("Dieser Monat", starts["Monat"]),
+                                            ("Gesamt", 0))):
             s = self.app.history.stats(since)
             mins = s["audio_s"] / 60
             per_min = (s["tok_in"] + s["tok_out"]) / mins if mins > 0.05 else 0
@@ -595,7 +801,25 @@ class MainWindow:
             ctk.CTkSwitch(r, text="", variable=var, progress_color=GREEN).pack(side="left")
             return var
 
-        self.v_clean = sw("Textnachbearbeitung (Claude)", cfg["cleanup"])
+        cr = ctk.CTkFrame(card, fg_color="transparent")
+        cr.pack(fill="x", padx=20, pady=7)
+        ctk.CTkLabel(cr, text="Textnachbearbeitung (Claude)", font=self.f_n, text_color=TXT, width=190, anchor="w",
+                     wraplength=180, justify="left").pack(side="left")
+        ctk.CTkSwitch(cr, text="Aus = bis zu 2x schneller, dafür Rohtext ohne Glättung", variable=self.clean_var,
+                      command=self._on_clean, progress_color=GREEN, font=self.f_s, text_color=MUT).pack(side="left")
+        cmp_ = cleanup_comparison()
+        (n_s, s_with, s_without), (n_l, l_with, l_without) = WAIT["short"], WAIT["long"]
+        de = lambda x: f"{x:.2f}".replace(".", ",")  # noqa: E731
+        de1 = lambda x: f"{x:.1f}".replace(".", ",")  # noqa: E731
+        ctk.CTkLabel(
+            card, font=self.f_s, text_color=MUT, wraplength=640, justify="left",
+            text=(f"Vergleich (Schätzung, Listenpreise): 10.000 Wörter diktiert (ca. {cmp_['n']} Diktate) kosten mit Haiku "
+                  f"ca. {de(cmp_['with'])} $ (Groq {de(cmp_['groq'])} $ + Haiku {de(cmp_['haiku'])} $), ohne Haiku "
+                  f"ca. {de(cmp_['without'])} $. Das sind ca. {cmp_['factor']:.0f}x weniger.\n"
+                  f"Wartezeit nach dem Loslassen: ein Satz ({n_s} Wörter) mit Haiku ca. {de1(s_with)} s, ohne ca. "
+                  f"{de1(s_without)} s. Ein Absatz ({n_l} Wörter) mit Haiku ca. {de1(l_with)} s, ohne ca. "
+                  f"{de1(l_without)} s."),
+        ).pack(anchor="w", padx=20, pady=(0, 8))
         self.v_sounds = sw("Töne", cfg["sounds"])
         self.v_auto = sw("Mit Windows starten", autostart.is_enabled())
 
@@ -645,7 +869,7 @@ class MainWindow:
         cfg.set(
             hotkey=list(self.hotkey), mode=MODES[self.w_mode.var.get()], language=LANGS[self.w_lang.var.get()],
             mic="" if mic == "Standard" else mic, stt_provider=self.w_prov.var.get(),
-            cleanup=self.v_clean.get(), sounds=self.v_sounds.get(), sound_preset=self.snd_var.get(),
+            cleanup=bool(self.clean_var.get()), sounds=self.v_sounds.get(), sound_preset=self.snd_var.get(),
         )
         save_env({k: e.get().strip() for k, e in self.key_entries.items() if e.get().strip()})
         if self.v_auto.get() != autostart.is_enabled():

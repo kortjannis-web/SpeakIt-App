@@ -17,6 +17,7 @@ class UI:
         self.root.withdraw()
         self.overlay = Overlay(self.root, app.rec)
         self.win = MainWindow(self)
+        self.ticks = 0
         self.root.after(30, self._loop)
 
     # Thread-sicherer Zugriff
@@ -53,4 +54,9 @@ class UI:
         except queue.Empty:
             pass
         self.overlay.tick()
+        self.ticks += 1
+        if self.ticks % 1800 == 0 and self.win.built:  # ca. alle 30 s: Heute/Monat neu berechnen (Mitternacht)
+            self.win.refresh_mini()
+            if self.win.visible and self.win.page == "Statistik":
+                self.win.refresh_stats()
         self.root.after(16, self._loop)
