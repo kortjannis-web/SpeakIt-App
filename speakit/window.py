@@ -196,8 +196,9 @@ class MainWindow:
              "Klicke dort auf den kleinen Pfeil (1), dann auf das Mikrofon-Symbol (2). Doppelklick öffnet das Fenster, "
              "Rechtsklick zeigt das Menü mit An/Aus und Beenden.", self._ill_tray),
             ("SpeakIt lernt mit",
-             "Im Verlauf klickst du ein falsch verstandenes Wort an, trägst das richtige ein und wählst einen Kontext, "
-             "zum Beispiel Re:Zero oder Webdesign. Danach erkennt SpeakIt es dauerhaft richtig. "
+             "Im Verlauf klickst du ein falsch verstandenes Wort an, trägst das richtige ein und wählst einen Kontext. "
+             "Hört SpeakIt zum Beispiel \"Cloud Code\", obwohl du Claude Code meinst, korrigierst du es einmal. "
+             "Danach erkennt SpeakIt es dauerhaft richtig. "
              "Mit dem Schalter oben links schaltest du SpeakIt ganz aus, mit dem zweiten die Nachbearbeitung.",
              self._ill_learn),
         ]
@@ -341,17 +342,17 @@ class MainWindow:
                       text="Doppelklick auf das Symbol\nöffnet dieses Fenster.\nRechtsklick zeigt das Menü\nmit An/Aus und Beenden.")
 
     def _ill_learn(self, c, k):
-        c.create_text(30 * k, 50 * k, text="… auch Subaru und ", fill=TXT, anchor="w", font=("Segoe UI", 15))
-        c.create_rectangle(212 * k, 38 * k, 322 * k, 62 * k, fill="#EFE9DA", outline="#EFE9DA")
-        c.create_text(217 * k, 50 * k, text="Petelgeuse", fill=TXT, anchor="w", font=("Segoe UI", 15))
-        c.create_line(214 * k, 62 * k, 320 * k, 62 * k, fill="#ef4444", width=int(2 * k))
-        c.create_text(330 * k, 50 * k, text=" wichtig.", fill=TXT, anchor="w", font=("Segoe UI", 15))
-        c.create_text(266 * k, 82 * k, text="↓ anklicken", fill=MUT, font=("Segoe UI", 11))
+        c.create_text(30 * k, 50 * k, text="… ich nutze jeden Tag", fill=TXT, anchor="w", font=("Segoe UI", 15))
+        c.create_rectangle(228 * k, 38 * k, 346 * k, 62 * k, fill="#EFE9DA", outline="#EFE9DA")
+        c.create_text(233 * k, 50 * k, text="Cloud Code", fill=TXT, anchor="w", font=("Segoe UI", 15))
+        c.create_line(230 * k, 62 * k, 344 * k, 62 * k, fill="#ef4444", width=int(2 * k))
+        c.create_text(350 * k, 50 * k, text=".", fill=TXT, anchor="w", font=("Segoe UI", 15))
+        c.create_text(287 * k, 82 * k, text="↓ anklicken", fill=MUT, font=("Segoe UI", 11))
         x, y, w, h = 150, 98, 310, 58
         c.create_rectangle(x * k, y * k, (x + w) * k, (y + h) * k, fill=BG, outline=LINE)
-        c.create_text((x + 14) * k, (y + 16) * k, text="Richtig:  Betelgeuse", fill=TXT, anchor="w",
+        c.create_text((x + 14) * k, (y + 16) * k, text="Richtig:  Claude Code", fill=TXT, anchor="w",
                       font=("Segoe UI Semibold", 12))
-        c.create_text((x + 14) * k, (y + 40) * k, text="Kontext:  Re:Zero      ✓ künftig automatisch ersetzen", fill=MUT,
+        c.create_text((x + 14) * k, (y + 40) * k, text="Kontext:  KI, Claude & Cloud      ✓ künftig automatisch ersetzen", fill=MUT,
                       anchor="w", font=("Segoe UI", 10))
 
     def _on_power(self):
