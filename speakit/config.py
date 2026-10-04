@@ -83,18 +83,20 @@ class Config:
 
 
 def read_vocabulary():
-    """Gibt (begriffe, ersetzungen) zurueck."""
-    terms, repl = [], []
+    """Gibt (begriffe, ersetzungen, themen) zurueck."""
+    terms, repl, topics = [], [], []
     if VOCAB_PATH.exists():
         for line in VOCAB_PATH.read_text(encoding="utf-8").splitlines():
             line = line.strip()
             if not line or line.startswith("#"):
                 continue
-            if "=>" in line:
+            if line.lower().startswith("thema:"):
+                topics.append(line[6:].strip())
+            elif "=>" in line:
                 a, b = (x.strip() for x in line.split("=>", 1))
                 if a and b:
                     repl.append((a, b))
                     terms.append(b)
             else:
                 terms.append(line)
-    return terms, repl
+    return terms, repl, topics

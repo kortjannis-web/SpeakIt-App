@@ -6,3 +6,9 @@ Next.js
 Tailwind
 Hostinger
 claude code => Claude Code
+# Themen: Hilfe fuer die Kontextkorrektur (falsch verstandene Woerter anhand des Themas)
+thema: Fantasy, Magie, Rollenspiele
+thema: Anime, Re:Zero (Betelgeuse, Subaru, Emilia, Rem, Ram, Petelgeuse-Kult)
+Betelgeuse
+Subaru
+Emilia

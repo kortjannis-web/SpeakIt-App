@@ -198,7 +198,7 @@ class App:
         t0 = time.time()
         secs = len(pcm) / 16000
         try:
-            terms, repl = read_vocabulary()
+            terms, repl, topics = read_vocabulary()
             wav = to_wav(pcm)
             raw = transcribe(wav, self.cfg["stt_provider"], self.cfg["language"], terms)
             t1 = time.time()
@@ -207,7 +207,7 @@ class App:
                 return
             text = raw
             if self.cfg["cleanup"]:
-                text = clean(raw, self.cfg["cleanup_model"], terms, title)
+                text = clean(raw, self.cfg["cleanup_model"], terms, title, topics)
             text = apply_replacements(text, repl)
             self.last_text = text
             paste_text(text, self.hk)

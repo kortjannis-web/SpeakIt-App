@@ -16,6 +16,7 @@ Regeln:
 - Sprache und Wortwahl beibehalten, nichts übersetzen, nichts hinzufügen, nichts weglassen außer Füllwörtern.
 - Zahlen, Uhrzeiten, Datumsangaben, URLs und E-Mail-Adressen normal schreiben (z. B. 14:30 Uhr, 3 Euro).
 - Schreibe Begriffe aus der Begriffsliste exakt so, wie sie dort stehen.
+- Kontextkorrektur: Erkenne anhand des Themas, welche Wörter die Spracherkennung offensichtlich falsch verstanden hat (Lautähnlichkeit, Unsinn im Kontext), und ersetze sie durch das gemeinte Wort. Beispiele: Thema Fantasy, "Maggi" wird "Magie"; Thema Re:Zero, "Petekus" wird "Betelgeuse". Namen aus Anime, Games, Filmen und Büchern schreibst du in der offiziellen Schreibweise. Korrigiere nur, wenn du dir bei Lautähnlichkeit und Kontext sicher bist, sonst lass das Wort stehen.
 - Passe den Ton leicht an die aktive App an (Chat locker, E-Mail sachlich), verfälsche aber nie den Inhalt."""
 
 
@@ -25,13 +26,17 @@ def apply_replacements(text: str, repl) -> str:
     return text
 
 
-def clean(raw: str, model: str, terms: list[str], app_title: str) -> str:
+def clean(raw: str, model: str, terms: list[str], app_title: str, topics: list[str] = ()) -> str:
     key = os.environ.get("ANTHROPIC_API_KEY", "")
     if not key or len(raw.split()) < 3:
         return raw
     system = SYSTEM
     if terms:
         system += "\n\nBegriffsliste: " + ", ".join(terms)
+    if topics:
+        system += "
+
+Bekannte Themen des Nutzers (Hilfe für die Kontextkorrektur, das aktuelle Thema ergibt sich aus dem Text): " + "; ".join(topics)
     if app_title:
         system += f"\n\nAktives Fenster (nur Kontext): {app_title[:80]}"
     try:
