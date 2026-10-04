@@ -46,6 +46,8 @@ def work_area():
 
 def fmt_time(sec: float) -> str:
     sec = int(sec)
+    if sec >= 3600:
+        return "1h"
     return f"{sec // 60}:{sec % 60:02d}"
 
 
@@ -332,8 +334,8 @@ class Overlay:
                               capstyle="round")
             txt = fmt_time(self.rec.seconds)
             c.create_text(left + (29 + BARS * 5 + 4) * k, cy, text=txt, fill=FG, anchor="w", font=self.timer_font)
-            # Breite passend zum Timer, kein überflüssiger Leerraum rechts
-            self.want_w = (29 + BARS * 5 + 4 + 12) * k + self.timer_font.measure(txt)
+            # Feste Breite für die breiteste Anzeige (59:59), damit die Kapsel beim Zählen nicht wackelt
+            self.want_w = (29 + BARS * 5 + 4 + 12) * k + self.timer_font.measure("59:59")
         elif self.mode == "msg":
             rr = 4 * k
             dx = left + 15 * k
