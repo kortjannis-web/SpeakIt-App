@@ -1,3 +1,4 @@
+import difflib
 import logging
 import os
 import re
@@ -44,6 +45,19 @@ def _system(ctx: dict, app_title: str) -> str:
     return NL.join(parts)
 
 
+def _focus(ctx: dict, raw: str) -> dict:
+    out = dict(ctx)
+    out["terms"] = relevant(ctx.get("terms", []), raw)
+    out["other_terms"] = []  # inaktive Kontexte nur, wenn ein Begriff daraus passt
+    for line in ctx.get("other_terms", []):
+        name, _, terms = line.partition(": ")
+        hit = relevant(terms.split(", "), raw)
+        if hit:
+            out["other_terms"].append(f"{name}: " + ", ".join(hit))
+    out["repl_hints"] = relevant(ctx.get("repl_hints", []), raw, key=lambda h: h.split(" -> ")[0])
+    return out
+
+
 def clean(raw: str, model: str, ctx: dict, app_title: str):
     """Gibt (text, tokens_in, tokens_out) zurück. Bei Fehlern der Rohtext."""
     key = os.environ.get("ANTHROPIC_API_KEY", "")
@@ -61,7 +75,7 @@ def clean(raw: str, model: str, ctx: dict, app_title: str):
                 "model": model,
                 "max_tokens": min(8192, 300 + len(raw)),
                 "temperature": 0,
-                "system": _system(ctx, app_title),
+                "system": _system(_focus(ctx, raw), app_title),
                 "messages": [{"role": "user", "content": f"<transcript>{raw}</transcript>"}],
             },
             timeout=20 + len(raw) / 120,
@@ -80,3 +94,28 @@ def clean(raw: str, model: str, ctx: dict, app_title: str):
     except requests.RequestException as e:
         logging.warning("Cleanup Netzwerk: %s", e)
         return raw, 0, 0
+
+
+def _words(text):
+    return {w for w in re.findall(r"\w+", text.lower()) if len(w) >= 4}
+
+
+def _similar(a, words):
+    need = 0.8 if len(a) < 6 else 0.62  # kurze Wörter nur bei sehr großer Ähnlichkeit
+    for w in words:
+        if abs(len(w) - len(a)) <= 3:
+            sm = difflib.SequenceMatcher(None, a, w)
+            if sm.real_quick_ratio() >= need and sm.quick_ratio() >= need and sm.ratio() >= need:
+                return True
+    return False
+
+
+def relevant(items, text, key=lambda x: x):
+    """Nur Begriffe, die im Transkript vorkommen oder ähnlich klingen (spart den Großteil der Prompt-Token)."""
+    words = _words(text)
+    out = []
+    for it in items:
+        toks = [t for t in re.findall(r"\w+", key(it).lower()) if len(t) >= 4]
+        if any(t in words or _similar(t, words) for t in toks):
+            out.append(it)
+    return out

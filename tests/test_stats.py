@@ -71,3 +71,9 @@ def test_preclean():
     assert preclean("ähm, also ich ich wollte, äh, sagen .") == "Also ich wollte sagen."
     assert preclean("Leute, die die Regeln kennen") == "Leute, die die Regeln kennen"
     assert preclean("Ich habe 3,5 Euro. äh ja") == "Ich habe 3,5 Euro. Ja"
+
+
+def test_relevant_terms():
+    from speakit.cleanup import relevant
+    hit = relevant(["Claude Code", "Betelgeuse", "Magie", "Wyvern"], "ich nutze cloud code und petelgeus mit maggi")
+    assert hit == ["Claude Code", "Betelgeuse", "Magie"]
