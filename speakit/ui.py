@@ -1,6 +1,5 @@
-"""Tk-UI: Overlay (Pille unten mittig) und Einstellungsfenster. Laeuft im Haupt-Thread."""
-import collections
-import ctypes
+"""Tk-UI im Haupt-Thread: Overlay und Einstellungen."""
+import logging
 import os
 import queue
 import tkinter as tk
@@ -10,11 +9,7 @@ from . import autostart
 from .audio import list_mics
 from .config import CONTEXTS_PATH, save_env
 from .hotkey import pretty
-
-KEY = "#ff00ff"  # transparente Farbe
-BG = "#18181b"
-RED, GREEN, AMBER, FG = "#ef4444", "#22c55e", "#f59e0b", "#f4f4f5"
-W, H = 260, 46
+from .overlay import Overlay
 
 MODES = {
     "Halten oder Tippen (beides)": "both",
@@ -30,21 +25,15 @@ class UI:
         self.q = queue.Queue()
         self.root = tk.Tk()
         self.root.withdraw()
-        self.state = "idle"
-        self.text = ""
-        self.tick = 0
-        self.levels = collections.deque([0.0] * 22, maxlen=22)
-        self.hide_at = 0
         self.settings = None
-        self._build_overlay()
+        self.overlay = Overlay(self.root, app.rec)
         self.root.after(30, self._loop)
 
-    # ---- Thread-sicherer Zugriff ----
     def call(self, fn, *a):
         self.q.put((fn, a))
 
     def set_state(self, state, text="", hold_ms=0):
-        self.call(self._set_state, state, text, hold_ms)
+        self.call(self.overlay.set_state, state, text, hold_ms)
 
     def on_new_dictation(self):
         pass
@@ -55,79 +44,6 @@ class UI:
     def quit(self):
         self.call(self.root.quit)
 
-    # ---- Overlay ----
-    def _build_overlay(self):
-        self.ov = tk.Toplevel(self.root)
-        self.ov.overrideredirect(True)
-        self.ov.attributes("-topmost", True)
-        self.ov.configure(bg=KEY)
-        self.ov.attributes("-transparentcolor", KEY)
-        sw, sh = self.ov.winfo_screenwidth(), self.ov.winfo_screenheight()
-        self.ov.geometry(f"{W}x{H}+{(sw - W) // 2}+{sh - 120}")
-        self.cv = tk.Canvas(self.ov, width=W, height=H, bg=KEY, highlightthickness=0)
-        self.cv.pack()
-        self.ov.update_idletasks()
-        try:  # nie den Fokus klauen, klick-durchlaessig
-            u = ctypes.windll.user32
-            hwnd = u.GetParent(self.ov.winfo_id()) or self.ov.winfo_id()
-            ex = u.GetWindowLongW(hwnd, -20)
-            u.SetWindowLongW(hwnd, -20, ex | 0x08000000 | 0x80 | 0x20)
-        except Exception:
-            pass
-        self.ov.withdraw()
-
-    def _set_state(self, state, text, hold_ms):
-        self.state, self.text = state, text
-        if state == "idle":
-            self.ov.withdraw()
-            return
-        self.hide_at = self.tick + hold_ms // 33 if hold_ms else 0
-        if state == "rec":
-            self.levels.extend([0.0] * self.levels.maxlen)
-        self.ov.deiconify()
-        self.ov.attributes("-topmost", True)
-
-    def _pill(self):
-        c = self.cv
-        c.delete("all")
-        r = H // 2
-        c.create_oval(0, 0, H, H, fill=BG, outline=BG)
-        c.create_oval(W - H, 0, W, H, fill=BG, outline=BG)
-        c.create_rectangle(r, 0, W - r, H, fill=BG, outline=BG)
-
-    def _draw(self):
-        self._pill()
-        c, t = self.cv, self.tick
-        cy = H // 2
-        if self.state == "rec":
-            pulse = 0.6 + 0.4 * abs(((t % 30) / 15) - 1)
-            rr = int(6 * pulse) + 2
-            c.create_oval(22 - rr, cy - rr, 22 + rr, cy + rr, fill=RED, outline=RED)
-            lv = self.app.rec.level
-            if t % 2 == 0:
-                self.levels.append(lv)
-            n = len(self.levels)
-            for i, v in enumerate(self.levels):
-                h = 3 + v * 26
-                x = 44 + i * 9
-                c.create_rectangle(x, cy - h / 2, x + 5, cy + h / 2, fill=FG, outline=FG)
-        elif self.state == "busy":
-            for i in range(3):
-                a = (t // 6 + i) % 3
-                rr = 4 + (2 if a == 0 else 0)
-                x = 28 + i * 16
-                c.create_oval(x - rr, cy - rr, x + rr, cy + rr, fill=AMBER, outline=AMBER)
-            c.create_text(
-                88, cy, text=self.text or "Transkribiere", fill=FG, anchor="w",
-                font=("Segoe UI", 10),
-            )
-        else:
-            col = GREEN if self.state == "done" else RED
-            c.create_oval(14, cy - 7, 28, cy + 7, fill=col, outline=col)
-            c.create_text(
-                38, cy, text=self.text[:30], fill=FG, anchor="w", font=("Segoe UI", 10)
-            )
-
     def _loop(self):
         try:
             while True:
@@ -135,16 +51,10 @@ class UI:
                 try:
                     fn(*a)
                 except Exception:
-                    import logging
                     logging.exception("UI-Aufruf")
         except queue.Empty:
             pass
-        self.tick += 1
-        if self.state != "idle":
-            if self.hide_at and self.tick >= self.hide_at:
-                self._set_state("idle", "", 0)
-            else:
-                self._draw()
+        self.overlay.tick()
         self.root.after(33, self._loop)
 
     # ---- Einstellungen ----
