@@ -68,6 +68,7 @@ class HotkeyManager:
         self.on_cancel = on_cancel
         self.cancel_armed = lambda: False
         self.injecting = False
+        self.enabled = True
         self.names = []
         self.mod_sets = []
         self.trigger = frozenset()
@@ -141,6 +142,8 @@ class HotkeyManager:
         sc, is_down = e.scan_code, e.event_type == "down"
         if self.capture:
             return self._capture(e, sc, is_down)
+        if not self.enabled:
+            return True
         if is_down:
             self.down.add(sc)
         else:

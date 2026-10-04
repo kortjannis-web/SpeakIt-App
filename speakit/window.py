@@ -5,7 +5,7 @@ import tkinter as tk
 
 import customtkinter as ctk
 
-from . import autostart
+from . import autostart, sounds
 from .audio import list_mics
 from .config import DATA, FROZEN, read_env_file, save_env
 from .hotkey import pretty
@@ -42,7 +42,8 @@ class MainWindow:
         self.built = False
         self.page = "Verlauf"
         self.sel_ctx = "general"
-        self.selection = ""
+        self._pending = None
+        self.last_ctx = "general"
         self.hist_limit = 30
 
     # ------------------------------------------------------------ Aufbau
@@ -64,6 +65,13 @@ class MainWindow:
         side.pack_propagate(False)
         ctk.CTkLabel(side, text="●  SpeakIt", font=ctk.CTkFont(family="Segoe UI Semibold", size=18),
                      text_color=TXT).pack(anchor="w", padx=22, pady=(26, 22))
+        self.enabled_var = ctk.BooleanVar(value=bool(self.app.cfg["enabled"]))
+        pw = ctk.CTkFrame(side, fg_color=CARD, corner_radius=14, border_width=1, border_color=LINE)
+        pw.pack(fill="x", padx=12, pady=(0, 14))
+        self.power_label = ctk.CTkLabel(pw, text="", font=self.f_h, text_color=TXT)
+        self.power_label.pack(side="left", padx=(14, 0), pady=12)
+        ctk.CTkSwitch(pw, text="", variable=self.enabled_var, command=self._on_power, width=52,
+                      switch_width=46, switch_height=24, progress_color=GREEN).pack(side="right", padx=14)
         self.nav = {}
         for name in PAGES:
             b = ctk.CTkButton(
@@ -96,6 +104,7 @@ class MainWindow:
         self._build_contexts()
         self._build_stats()
         self._build_settings()
+        self._power_text()
         self.built = True
 
     def _title(self, parent, title, sub=""):
@@ -145,6 +154,22 @@ class MainWindow:
         self.side_info.configure(text=f"Taste: {pretty(self.app.cfg['hotkey'])}")
         self.refresh_mini()
 
+    def _on_power(self):
+        on = bool(self.enabled_var.get())
+        self.app.set_enabled(on)
+        self._power_text()
+
+    def _power_text(self):
+        on = bool(self.enabled_var.get())
+        self.power_label.configure(text="SpeakIt ist an" if on else "SpeakIt ist aus",
+                                   text_color=TXT if on else RED)
+
+    def sync_enabled(self):
+        """Wird vom Tray aufgerufen, wenn dort umgeschaltet wurde."""
+        if self.built:
+            self.enabled_var.set(bool(self.app.cfg["enabled"]))
+            self._power_text()
+
     def refresh_mini(self):
         now = datetime.datetime.now()
         starts = {
@@ -168,12 +193,8 @@ class MainWindow:
     # ------------------------------------------------------------ Verlauf
     def _build_history(self):
         p = self.pages["Verlauf"]
-        self._title(p, "Verlauf", "Klicke ein Wort an oder markiere mehrere, dann unten auf „Korrigieren“. "
-                                  "SpeakIt merkt sich die Korrektur und lernt dazu.")
-        self.bar = ctk.CTkFrame(p, fg_color=CARD, corner_radius=14, border_width=1, border_color=LINE)
-        self.bar_label = ctk.CTkLabel(self.bar, text="", font=self.f_n, text_color=TXT)
-        self.bar_label.pack(side="left", padx=16, pady=10)
-        self._btn(self.bar, "Korrigieren …", self.open_correction).pack(side="right", padx=10, pady=8)
+        self._title(p, "Verlauf", "Klicke auf ein beliebiges Wort (oder markiere mehrere), um es zu verbessern und einem "
+                                  "Kontext zuzuordnen. SpeakIt lernt dazu.")
         self.hist = ctk.CTkScrollableFrame(p, fg_color=BG, corner_radius=0)
         self.hist.pack(fill="both", expand=True, padx=22, pady=(0, 8))
 
@@ -181,7 +202,6 @@ class MainWindow:
         for w in self.hist.winfo_children():
             w.destroy()
         rows = self.app.history.recent(self.hist_limit)
-        self._set_selection("")
         if not rows:
             c = ctk.CTkFrame(self.hist, fg_color=CARD, corner_radius=16, border_width=1, border_color=LINE)
             c.pack(fill="x", padx=12, pady=8)
@@ -214,7 +234,7 @@ class MainWindow:
         ctk.CTkLabel(top, text=t, font=self.f_h, text_color=TXT).pack(side="left")
         ctk.CTkLabel(top, text="  " + meta, font=self.f_s, text_color=MUT).pack(side="left")
         tw = tk.Text(c, wrap="word", relief="flat", borderwidth=0, highlightthickness=0, bg=CARD, fg=TXT,
-                     font=("Segoe UI", 12), cursor="arrow", padx=0, pady=0, spacing1=2, spacing3=2,
+                     font=("Segoe UI", 12), cursor="hand2", padx=0, pady=0, spacing1=2, spacing3=2,
                      selectbackground="#CFE0FF", inactiveselectbackground="#CFE0FF", selectforeground=TXT)
         state = {"raw": False}
 
@@ -248,6 +268,9 @@ class MainWindow:
         raw_btn.pack(side="right")
         tw.pack(fill="x", padx=16, pady=(8, 14))
         fill()
+        tw.tag_configure("hov", underline=True, background="#EFE9DA")
+        tw.bind("<Motion>", lambda e, w=tw: self._hover(e, w))
+        tw.bind("<Leave>", lambda e, w=tw: w.tag_remove("hov", "1.0", "end"))
         tw.bind("<ButtonRelease-1>", lambda e, w=tw: self._on_select(e, w))
         tw.bind("<MouseWheel>", lambda e: (self.hist._parent_canvas.yview_scroll(int(-e.delta / 120), "units"), "break")[1])
         tw.bind("<Configure>", lambda e, w=tw: self._fit(w))
@@ -269,20 +292,23 @@ class MainWindow:
             idx = tw.index(f"@{e.x},{e.y}")
             sel = tw.get(f"{idx} wordstart", f"{idx} wordend")
         sel = sel.strip().strip(".,;:!?\"'()„“")
-        self.sel_row = getattr(tw, "_row", None)
-        self._set_selection(sel)
+        if not sel:
+            return
+        row = getattr(tw, "_row", None)
+        if self._pending:
+            self.root.after_cancel(self._pending)  # Doppelklick: nur einmal öffnen
+        self._pending = self.root.after(230, lambda: self.open_correction(sel, row))
 
-    def _set_selection(self, sel):
-        self.selection = sel
-        if sel:
-            self.bar_label.configure(text=f"Ausgewählt:  „{sel[:60]}“")
-            if not self.bar.winfo_ismapped():
-                self.bar.pack(fill="x", padx=34, pady=(0, 10), before=self.hist)
-        elif self.bar.winfo_ismapped():
-            self.bar.pack_forget()
+    def _hover(self, e, tw):
+        idx = tw.index(f"@{e.x},{e.y}")
+        ws, we = tw.index(f"{idx} wordstart"), tw.index(f"{idx} wordend")
+        word = tw.get(ws, we)
+        tw.tag_remove("hov", "1.0", "end")
+        if word.strip(" .,;:!?\"'()„“\n"):
+            tw.tag_add("hov", ws, we)
 
-    def open_correction(self):
-        wrong = self.selection
+    def open_correction(self, wrong, row=None):
+        self._pending = None
         if not wrong:
             return
         dlg = ctk.CTkToplevel(self.root)
@@ -304,7 +330,7 @@ class MainWindow:
         ctk.CTkLabel(dlg, text="Kontext (Thema)", font=self.f_s, text_color=MUT).pack(**pad)
         names = {c["name"]: c["id"] for c in self.app.contexts.items}
         NEW = "+ Neuer Kontext …"
-        ctx_var = ctk.StringVar(value=next(iter(names)))
+        ctx_var = ctk.StringVar(value=next((n for n, i in names.items() if i == self.last_ctx), next(iter(names))))
         menu = ctk.CTkOptionMenu(dlg, values=list(names) + [NEW], variable=ctx_var, width=408, height=38,
                                  corner_radius=10, font=self.f_n, fg_color=CARD, text_color=TXT,
                                  button_color=SEL, button_hover_color=LINE, dropdown_font=self.f_n)
@@ -334,9 +360,9 @@ class MainWindow:
                 cid = self.app.contexts.add(e_new.get() or "Neuer Kontext")["id"]
             else:
                 cid = names[ctx_var.get()]
+            self.last_ctx = cid
             if replace_var.get() and wr:
                 self.app.contexts.add_correction(cid, wr, right)
-                row = getattr(self, "sel_row", None)
                 if row and wr in row["text"]:
                     self.app.history.update_text(row["id"], row["text"].replace(wr, right))
             else:
@@ -513,16 +539,25 @@ class MainWindow:
             w.pack(side="left", fill="x", expand=True)
             return w
 
+        pr = ctk.CTkFrame(card, fg_color="transparent")
+        pr.pack(fill="x", padx=20, pady=(14, 7))
+        ctk.CTkLabel(pr, text="SpeakIt aktiv", font=self.f_n, text_color=TXT, width=190, anchor="w").pack(side="left")
+        ctk.CTkSwitch(pr, text="Aus = Taste wird nicht abgefangen", variable=self.enabled_var, command=self._on_power,
+                      progress_color=GREEN, font=self.f_s, text_color=MUT).pack(side="left")
         self.hotkey = list(cfg["hotkey"])
         self.hk_var = ctk.StringVar(value=pretty(self.hotkey))
         hk_row = ctk.CTkFrame(card, fg_color="transparent")
         hk_row.pack(fill="x", padx=20, pady=7)
-        ctk.CTkLabel(hk_row, text="Aufnahme-Taste", font=self.f_n, text_color=TXT, width=190, anchor="w").pack(side="left")
+        ctk.CTkLabel(hk_row, text="Taste oder Tastenkombination", font=self.f_n, text_color=TXT, width=190, anchor="w",
+                     wraplength=180, justify="left").pack(side="left")
         self.hk_btn = ctk.CTkButton(hk_row, textvariable=self.hk_var, command=self._capture, width=230, height=36,
                                     corner_radius=10, font=self.f_n, fg_color=BG, hover_color=SEL, text_color=TXT,
                                     border_width=1, border_color=LINE)
         self.hk_btn.pack(side="left")
         self._btn(hk_row, "Copilot-Taste", self._copilot, primary=False, width=120).pack(side="left", padx=8)
+        ctk.CTkLabel(card, text="Eine einzelne Taste (z. B. Enter, F9, M) oder eine Kombination (z. B. Strg + Alt + Leertaste): "
+                                "Knopf anklicken, Taste(n) drücken, loslassen. Die Taste wird dabei komplett abgefangen.",
+                     font=self.f_s, text_color=MUT, wraplength=620, justify="left").pack(anchor="w", padx=20, pady=(0, 6))
 
         def opt(values, current):
             def make(r):
@@ -542,6 +577,15 @@ class MainWindow:
             mics = ["Standard"]
         self.w_mic = row("Mikrofon", opt(mics, cfg["mic"] if cfg["mic"] in mics else "Standard"))
         self.w_prov = row("STT-Anbieter", opt(["groq", "openai"], cfg["stt_provider"]))
+        sr = ctk.CTkFrame(card, fg_color="transparent")
+        sr.pack(fill="x", padx=20, pady=7)
+        ctk.CTkLabel(sr, text="Klang", font=self.f_n, text_color=TXT, width=190, anchor="w").pack(side="left")
+        self.snd_var = ctk.StringVar(value=cfg["sound_preset"] if cfg["sound_preset"] in sounds.PRESETS else sounds.DEFAULT)
+        ctk.CTkOptionMenu(sr, values=sounds.PRESETS, variable=self.snd_var, height=36, corner_radius=10, font=self.f_n,
+                          fg_color=BG, text_color=TXT, button_color=SEL, button_hover_color=LINE,
+                          dropdown_font=self.f_n, width=210,
+                          command=lambda v: sounds.preview(v)).pack(side="left")
+        self._btn(sr, "Anhören", lambda: sounds.preview(self.snd_var.get()), primary=False, width=90).pack(side="left", padx=8)
 
         def sw(label, value):
             var = ctk.BooleanVar(value=value)
@@ -601,7 +645,7 @@ class MainWindow:
         cfg.set(
             hotkey=list(self.hotkey), mode=MODES[self.w_mode.var.get()], language=LANGS[self.w_lang.var.get()],
             mic="" if mic == "Standard" else mic, stt_provider=self.w_prov.var.get(),
-            cleanup=self.v_clean.get(), sounds=self.v_sounds.get(),
+            cleanup=self.v_clean.get(), sounds=self.v_sounds.get(), sound_preset=self.snd_var.get(),
         )
         save_env({k: e.get().strip() for k, e in self.key_entries.items() if e.get().strip()})
         if self.v_auto.get() != autostart.is_enabled():

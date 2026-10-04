@@ -25,6 +25,9 @@ HALLUCINATIONS = {
 }
 
 
+IDLE, OFF = "#52525b", "#c9c5bb"
+
+
 def _icon(color):
     img = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
@@ -54,6 +57,7 @@ class App:
         self.pending = 0
         self.last_text = ""
         self.tray = None
+        self.hk.enabled = bool(self.cfg["enabled"])
 
     # ---- Start ----
     def run(self, background=False):
@@ -87,6 +91,8 @@ class App:
     # ---- Tray ----
     def _start_tray(self):
         menu = pystray.Menu(
+            pystray.MenuItem("SpeakIt aktiv", lambda: self.set_enabled(not self.cfg["enabled"]),
+                             checked=lambda _i: self.cfg["enabled"]),
             pystray.MenuItem(lambda _i: f"Taste: {pretty(self.cfg['hotkey'])}", None, enabled=False),
             pystray.MenuItem(
                 "Textnachbearbeitung", self._toggle_cleanup,
@@ -99,7 +105,7 @@ class App:
             pystray.MenuItem("Log öffnen", lambda: os.startfile(LOG_PATH)),
             pystray.MenuItem("Beenden", self._quit),
         )
-        self.tray = pystray.Icon("SpeakIt", _icon("#52525b"), "SpeakIt", menu)
+        self.tray = pystray.Icon("SpeakIt", _icon(self._idle()), "SpeakIt", menu)
         self.tray.run_detached()
 
     def refresh_tray(self):
@@ -109,6 +115,20 @@ class App:
     def _tray_color(self, color):
         if self.tray:
             self.tray.icon = _icon(color)
+
+    def _idle(self):
+        return IDLE if self.cfg["enabled"] else OFF
+
+    def set_enabled(self, on: bool):
+        """Globaler An/Aus-Schalter: aus = Taste wird nicht mehr abgefangen, nichts wird aufgenommen."""
+        self.cfg.set(enabled=bool(on))
+        self.hk.enabled = bool(on)
+        if not on:
+            self.hk.reset_state()
+            self.cancel()
+        self._tray_color(self._idle())
+        self.refresh_tray()
+        self.ui.call(self.ui.win.sync_enabled)
 
     def _toggle_cleanup(self):
         self.cfg.set(cleanup=not self.cfg["cleanup"])
@@ -157,7 +177,7 @@ class App:
                 return
             self.recording = False
             self.rec.stop()
-            self._tray_color("#52525b")
+            self._tray_color(self._idle())
             self.ui.set_state("idle")
             self._sound("stop")
         if locked:
@@ -195,7 +215,7 @@ class App:
         self._sound("stop")
         title = active_window_title()
         if not has_speech(pcm):
-            self._tray_color("#52525b")
+            self._tray_color(self._idle())
             self.ui.set_state("done", "Nichts gehört", 1200)
             return
         self.pending += 1
@@ -244,7 +264,7 @@ class App:
         finally:
             self.pending -= 1
             if self.pending <= 0 and not self.recording:
-                self._tray_color("#52525b")
+                self._tray_color(self._idle())
 
     def _save_failed(self, pcm):
         try:
