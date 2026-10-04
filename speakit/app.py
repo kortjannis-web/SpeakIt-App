@@ -200,7 +200,8 @@ class App:
             return
         self.pending += 1
         self._tray_color("#d97706")
-        self.ui.set_state("busy")
+        eta = 1.5 + len(pcm) / 16000 * 0.05
+        self.ui.set_state("busy", f"{eta:.1f}")
         self.pool.submit(self._process, pcm, title)
 
     # ---- Verarbeitung ----
@@ -231,7 +232,6 @@ class App:
                 "%.1fs Audio, STT %.1fs, gesamt %.1fs, %d Zeichen, Token %d/%d, %.4f $",
                 secs, t1 - t0, time.time() - t0, len(text), t_in, t_out, cost,
             )
-            self._sound("done")
             if self.pending <= 1:
                 self.ui.set_state("done", "Eingefügt", 700)
         except SttError as e:
@@ -260,4 +260,4 @@ class App:
 
     def _sound(self, name):
         if self.cfg["sounds"]:
-            sounds.play(name)
+            sounds.play(name, self.cfg["sound_preset"])

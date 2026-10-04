@@ -26,6 +26,9 @@ DEFAULTS = {
     "cleanup": True,
     "cleanup_model": "claude-haiku-4-5-20251001",
     "sounds": True,
+    "sound_preset": "Sanft",
+    "enabled": True,
+    "tutorial_done": False,
     "mic": "",
     "max_seconds": 720,
 }
