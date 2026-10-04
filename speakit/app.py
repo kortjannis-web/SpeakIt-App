@@ -6,7 +6,6 @@ from concurrent.futures import ThreadPoolExecutor
 
 import pyperclip
 import pystray
-from PIL import Image, ImageDraw
 
 from . import sounds
 from .audio import Recorder, has_speech, to_wav
@@ -14,6 +13,7 @@ from .cleanup import clean
 from .config import FAILED_DIR, LOG_PATH, Config, load_env
 from .storage import Contexts, History, apply_replacements, llm_cost, stt_cost
 from .hotkey import HotkeyManager, pretty
+from .icon import drop_icon
 from .paste import active_window_title, paste_text
 from .stt import SttError, transcribe
 from .ui import UI
@@ -25,18 +25,11 @@ HALLUCINATIONS = {
 }
 
 
-IDLE, OFF = "#52525b", "#c9c5bb"
+IDLE, OFF = "#f59e0b", "#b8b2a4"
 
 
 def _icon(color):
-    img = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
-    d = ImageDraw.Draw(img)
-    d.ellipse((2, 2, 62, 62), fill=color)
-    d.rounded_rectangle((24, 12, 40, 36), radius=8, fill="white")
-    d.arc((18, 22, 46, 46), 0, 180, fill="white", width=3)
-    d.line((32, 46, 32, 54), fill="white", width=3)
-    d.line((24, 54, 40, 54), fill="white", width=3)
-    return img
+    return drop_icon(64, color)
 
 
 class App:
@@ -198,7 +191,7 @@ class App:
             return False
         self.recording = True
         self._sound("start")
-        self._tray_color("#dc2626")
+        self._tray_color("#ef4444")
         self.ui.set_state("rec")
         threading.Thread(target=self._max_guard, daemon=True).start()
         return True
@@ -222,7 +215,7 @@ class App:
             self.ui.set_state("done", "Nichts gehört", 1200)
             return
         self.pending += 1
-        self._tray_color("#d97706")
+        self._tray_color("#fbbf24")
         secs_ = len(pcm) / 16000
         eta = (1.6 + secs_ * 0.04) if self.cfg["cleanup"] else (0.8 + secs_ * 0.02)
         self.ui.set_state("busy", f"{eta:.1f}")
@@ -248,6 +241,8 @@ class App:
                 )
             text = apply_replacements(text, self.contexts.active_repl())
             self.last_text = text
+            if self.pending <= 1:  # Kapsel sofort füllen und schließen, das Einfügen läuft parallel
+                self.ui.set_state("done", "Eingefügt", 700)
             paste_text(text, self.hk)
             cost = stt_cost(self.cfg["stt_provider"], secs) + llm_cost(t_in, t_out)
             self.history.add(raw, text, secs, t_in, t_out, cost)
@@ -256,8 +251,6 @@ class App:
                 "%.1fs Audio, STT %.1fs, gesamt %.1fs, %d Zeichen, Token %d/%d, %.4f $",
                 secs, t1 - t0, time.time() - t0, len(text), t_in, t_out, cost,
             )
-            if self.pending <= 1:
-                self.ui.set_state("done", "Eingefügt", 700)
         except SttError as e:
             self._save_failed(pcm)
             self._error(str(e)[:60])

@@ -15,10 +15,23 @@ class UI:
         ctk.set_appearance_mode("light")
         self.root = ctk.CTk()
         self.root.withdraw()
+        self._set_window_icon()
         self.overlay = Overlay(self.root, app.rec)
         self.win = MainWindow(self)
         self.ticks = 0
         self.root.after(30, self._loop)
+
+    def _set_window_icon(self):
+        """Orange Tropfen als Fenster-Symbol (customtkinter setzt nach 200 ms ein eigenes, daher nochmal)."""
+        try:
+            from .config import DATA
+            from .icon import save_ico
+            path = str(DATA / "app.ico")
+            save_ico(path)
+            self.root.iconbitmap(path)
+            self.root.after(300, lambda: self.root.iconbitmap(path))
+        except Exception:
+            logging.exception("Fenster-Icon")
 
     # Thread-sicherer Zugriff
     def call(self, fn, *a):
