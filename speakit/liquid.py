@@ -114,25 +114,25 @@ class LiquidButton(tk.Canvas):
     def _kick(self):
         if self._job is None:
             self._last = time.monotonic()
-            self._job = self.after(16, self._step)
+            self._job = self.after(33, self._step)
 
     # ---------------------------------------------------------------- Animation
     def _step(self):
         self._job = None
         now = time.monotonic()
-        dt = min(0.05, now - self._last)
+        dt = min(0.08, now - self._last)
         self._last = now
-        self.t += dt
+        self.t += dt * 0.8
         self.lv += (self.target - self.lv) * (1 - math.exp(-dt * 8.0))
         speed = abs(self.target - self.lv)
-        self.act = max(self.act * math.exp(-dt * 2.2), min(1.0, speed * 1.6))
+        self.act = max(self.act * math.exp(-dt * 3.5), min(1.0, speed * 1.6))
         self.tilt_v += (-55 * self.tilt - 3.0 * self.tilt_v) * dt
         self.tilt = max(-9.0, min(9.0, self.tilt + self.tilt_v * dt))
         if abs(self.lv) < 0.004 and self.target == 0.0:
             self.lv = 0.0
         self._draw()
-        if self.lv > 0.01 or speed > 0.003 or self.act > 0.03 or abs(self.tilt) > 0.05:
-            self._job = self.after(16, self._step)
+        if self.lv > 0.01 or speed > 0.003 or self.act > 0.06 or abs(self.tilt) > 0.15:
+            self._job = self.after(33, self._step)
 
     # ---------------------------------------------------------------- Zeichnen
     @staticmethod
@@ -157,7 +157,7 @@ class LiquidButton(tk.Canvas):
         h = y2 - y1
         level = y2 - self.lv * (h + 3 * k) - (1.2 * k if layer else 0.0)
         amp = (0.8 + 3.0 * self.act) * k * min(1.0, (1 - self.lv) * 5 + 0.3)
-        n = max(10, min(36, int((x2 - x1) / (6 * k))))
+        n = max(8, min(22, int((x2 - x1) / (10 * k))))
         pts = []
         for i in range(n):
             fx = i / (n - 1)
@@ -172,8 +172,8 @@ class LiquidButton(tk.Canvas):
 
     def _layer(self, cols, x1, x2, y1, y2, r):
         xs = [c[0] for c in cols]
-        for j in range(1, 9):
-            off = r * (1 - math.cos(j / 9 * math.pi / 2))
+        for j in range(1, 5):
+            off = r * (1 - math.cos(j / 5 * math.pi / 2))
             xs += [x1 + off, x2 - off]
         xs = sorted(set(xs))
 

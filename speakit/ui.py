@@ -72,4 +72,4 @@ class UI:
             self.win.refresh_mini()
             if self.win.visible and self.win.page == "Statistik":
                 self.win.refresh_stats()
-        self.root.after(16, self._loop)
+        self.root.after(16 if self.overlay.visible else 50, self._loop)
