@@ -177,6 +177,10 @@ class LiquidButton(tk.Canvas):
         self._retarget()
 
     def _press(self, e):
+        self.lvv += 4.5  # beim Drücken schwappt es kurz höher und federt zurück
+        if self._job is not None:  # Ruhe-Takt abbrechen, damit es sofort reagiert
+            self.after_cancel(self._job)
+            self._job = None
         self._kick()
 
     def _release(self, e):
@@ -240,7 +244,17 @@ class LiquidButton(tk.Canvas):
         if self._sprite is None:
             w, h = self._size
             self._sprite = get_sprite(w, h, int(min(self.radius * self.k, h / 2)), self.k)
+            self._warm(0)
         return self._sprite
+
+    def _warm(self, i):
+        """Ruhe-Schleifen (Hover und Auswahl) im Leerlauf vorab fertig rendern, ein paar Bilder pro Durchgang."""
+        sp = self._sprite
+        if sp is None or i >= 2 * FRAMES:
+            return
+        for j in range(i, min(i + 4, 2 * FRAMES)):
+            sp.image(self.hover_level if j < FRAMES else self.selected_level, j % FRAMES)
+        self.after(15, lambda: self._warm(i + 4))
 
     # ---------------------------------------------------------------- Animation
     def _step(self):
@@ -248,9 +262,11 @@ class LiquidButton(tk.Canvas):
         now = time.monotonic()
         dt = min(0.05, now - self._last)
         self._last = now
-        a = 480 * (self.target - self.lv) - 26 * self.lvv  # leicht federnd, ein wenig Überschwingen
-        self.lvv += a * dt
-        self.lv = max(0.0, min(1.0, self.lv + self.lvv * dt))
+        n = max(1, round(dt / 0.008))  # kleine Teilschritte, damit die Feder weich bleibt
+        for _ in range(n):
+            a = 480 * (self.target - self.lv) - 26 * self.lvv  # leicht federnd, ein wenig Überschwingen
+            self.lvv += a * dt / n
+            self.lv = max(0.0, min(1.0, self.lv + self.lvv * dt / n))
         moving = abs(self.target - self.lv) > 0.003 or abs(self.lvv) > 0.02
         if not moving:
             self.lv, self.lvv = self.target, 0.0
