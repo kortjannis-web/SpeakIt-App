@@ -38,9 +38,13 @@ Ohne Anthropic-Key funktioniert SpeakIt weiter, nur ohne Glättung und Kontextko
 - Das Overlay unten zeigt Pegel und Sekundenticker, danach den Status.
 - Sprachbefehle im Diktat: "neue Zeile", "neuer Absatz", "Punkt", "Komma", "Fragezeichen".
 
+## Design
+
+Orange Tropfen als Symbol (App, Tray, Fenster). In Buttons und im gewählten Menüpunkt fließt orange Flüssigkeit ein und beim Verlassen sofort wieder ab. Die Titelleiste ist dezent orange (Windows 11).
+
 ## Anzeige beim Sprechen
 
-Unten mittig fährt eine kleine Kapsel aus der Mitte auf: roter Punkt, runde Pegelbalken, Sekundenticker. Beim Verarbeiten füllt sich eine orange Flüssigkeit (Wellen, Schwappen, Spritzer) bis zur Decke. Ist sie voll, ist der Text eingefügt und die Kapsel klappt wieder zu.
+Unten mittig fährt eine kleine Kapsel aus der Mitte auf: oranger Punkt (schwabbelt leicht mit der Lautstärke), runde Pegelbalken, Sekundenticker, orange Kontur. Beim Verarbeiten füllt sich eine orange Flüssigkeit (Wellen, Schwappen, Spritzer) bis zur Decke. Ist sie voll, ist der Text eingefügt und die Kapsel klappt wieder zu.
 
 ## Fenster
 
