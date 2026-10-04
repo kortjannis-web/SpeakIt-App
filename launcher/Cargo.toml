@@ -1,0 +1,13 @@
+[package]
+name = "speakit-installer"
+version = "1.0.0"
+edition = "2021"
+
+[[bin]]
+name = "SpeakIt-Installer"
+path = "src/main.rs"
+
+[profile.release]
+opt-level = "z"
+lto = true
+strip = true
