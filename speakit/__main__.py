@@ -10,6 +10,9 @@ def main():
         from .installer import ensure_installed
         if ensure_installed():
             return
+        from .updater import apply_pending
+        if apply_pending():  # geladenes Update einsetzen und neu starten
+            return
     # Nur eine Instanz
     ctypes.windll.kernel32.CreateMutexW(None, False, "Global\\SpeakIt_single_instance")
     if ctypes.windll.kernel32.GetLastError() == 183:

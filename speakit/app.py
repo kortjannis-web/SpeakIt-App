@@ -18,6 +18,7 @@ from .icon import drop_icon
 from .paste import active_window_title, paste_text
 from .stt import SttError, transcribe
 from .ui import UI
+from . import updater
 
 HALLUCINATIONS = {
     "untertitel der amara.org-community", "vielen dank fürs zuschauen",
@@ -68,6 +69,7 @@ class App:
         self.hk.start()
         self._start_tray()
         threading.Thread(target=self._watchdog, daemon=True).start()
+        updater.start_background(on_ready=self.refresh_tray)
         no_key = self.cfg["stt_provider"] == "groq" and not os.environ.get("GROQ_API_KEY")
         if no_key:
             self.ui.open_window("Einstellungen")
@@ -102,6 +104,8 @@ class App:
             pystray.MenuItem("Einstellungen …", lambda: self.ui.open_settings()),
             pystray.MenuItem("Letzten Text kopieren", self._copy_last),
             pystray.MenuItem("Kontexte bearbeiten", lambda: self.ui.open_window("Kontexte")),
+            pystray.MenuItem("Update installieren (Neustart)", lambda: updater.restart_now(self._quit),
+                             visible=lambda _i: updater.pending()),
             pystray.MenuItem("Log öffnen", lambda: os.startfile(LOG_PATH)),
             pystray.MenuItem("Beenden", self._quit),
         )

@@ -14,6 +14,7 @@ from .hotkey import pretty
 from .icon import drop_icon
 from .liquid import LiquidButton, text_width
 from .overlay import dpi_scale
+from .version import VERSION
 from .storage import WAIT, _split, cleanup_comparison, period_starts
 
 BG, SIDE, CARD, LINE = "#F4F1EA", "#ECE8DF", "#FFFFFF", "#E3DED2"
@@ -213,7 +214,7 @@ class MainWindow:
                 self.refresh_contexts()
             elif name == "Statistik":
                 self.refresh_stats()
-        self.side_info.configure(text=f"Taste: {pretty(self.app.cfg['hotkey'])}")
+        self.side_info.configure(text=f"Taste: {pretty(self.app.cfg['hotkey'])}  ·  Version {VERSION}")
         self.refresh_mini()
 
     # ------------------------------------------------------------ Tutorial
@@ -960,6 +961,6 @@ class MainWindow:
         except ValueError:
             self.set_msg.configure(text="Taste unbekannt", text_color=RED)
         self.app.refresh_tray()
-        self.side_info.configure(text=f"Taste: {pretty(cfg['hotkey'])}")
+        self.side_info.configure(text=f"Taste: {pretty(cfg['hotkey'])}  ·  Version {VERSION}")
         self._clean_text()
         self.dirty.update(("Verlauf", "Kontexte", "Statistik"))

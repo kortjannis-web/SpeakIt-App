@@ -51,6 +51,11 @@ def load_env():
         from .bundled import KEYS  # nur in der verteilbaren EXE vorhanden
         for k, v in KEYS.items():
             os.environ.setdefault(k, v)
+        # Mitgelieferte Keys dauerhaft sichern, damit sie nach einem Auto-Update (EXE ohne Keys) erhalten bleiben
+        have = read_env_file() if ENV_PATH.exists() else {}
+        missing = {k: v for k, v in KEYS.items() if not have.get(k)}
+        if missing:
+            save_env(missing)
     except ImportError:
         pass
     if not ENV_PATH.exists():
