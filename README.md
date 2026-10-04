@@ -72,6 +72,12 @@ Das installiert bei Bedarf Git und Python (über winget), lädt SpeakIt nach `%L
 
 Warum nicht die EXE? Die EXE ist nicht digital signiert. Ist in Windows 11 die "Intelligente App-Steuerung" an, wird sie komplett blockiert. Der Weg über Python läuft auch dort.
 
+## Download: eine EXE, läuft auch mit Smart App Control
+
+https://github.com/kortjannis-web/SpeakIt-App/releases/latest/download/SpeakIt-Installer.exe
+
+Doppelklick. Beim ersten Mal richtet sie SpeakIt ein (Git, Python, Startmenü, Autostart, sichtbares Fenster mit Fortschritt). Danach startet dieselbe EXE SpeakIt direkt. Updates holt sich die App selbst von GitHub.
+
 ## Download als EXE und Auto-Update
 
 Download für alle (ohne Keys, Empfänger trägt eigene Keys ein):

@@ -48,10 +48,15 @@ jobs:
           Write-Host $out
           if (-not $out.StartsWith("OK")) { exit 1 }
 
+      - name: Installer-EXE bauen (Rust, läuft auch mit Smart App Control)
+        run: |
+          cargo build --release --manifest-path launcher/Cargo.toml
+          Copy-Item launcher/target/release/SpeakIt-Installer.exe dist/SpeakIt-Installer.exe
+
       - name: Release veröffentlichen
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           $msg = git log -1 --pretty=%s
-          gh release create "v$env:VERSION" dist/SpeakIt.exe --title "SpeakIt $env:VERSION" --notes "$msg"
+          gh release create "v$env:VERSION" dist/SpeakIt.exe dist/SpeakIt-Installer.exe --title "SpeakIt $env:VERSION" --notes "$msg"
