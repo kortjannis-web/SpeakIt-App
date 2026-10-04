@@ -49,6 +49,8 @@ jobs:
           if (-not $out.StartsWith("OK")) { exit 1 }
 
       - name: Installer-EXE bauen (Rust, läuft auch mit Smart App Control)
+        env:
+          SPEAKIT_ENV: ${{ secrets.SPEAKIT_ENV }}  # nur im privaten Repo gesetzt: Keys werden eingebaut
         run: |
           cargo build --release --manifest-path launcher/Cargo.toml
           Copy-Item launcher/target/release/SpeakIt-Installer.exe dist/SpeakIt-Installer.exe
