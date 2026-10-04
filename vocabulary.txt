@@ -12,3 +12,18 @@ thema: Anime, Re:Zero (Betelgeuse, Subaru, Emilia, Rem, Ram, Petelgeuse-Kult)
 Betelgeuse
 Subaru
 Emilia
+Echidna
+Satella
+Roswaal
+Reinhard
+Felt
+Wilhelm
+Flügel
+Beatrice
+Puck
+Garfiel
+Otto
+Unseen Hands
+Iketna => Echidna
+Ikidna => Echidna
+Petekus => Betelgeuse
