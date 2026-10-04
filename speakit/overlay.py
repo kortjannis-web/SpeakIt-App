@@ -23,7 +23,7 @@ LIQUID_DONE = "#fcd27a"  # helleres Orange, sobald der Text fertig ist
 GLOW = 0.28  # Dauer des Übergangs in Sekunden
 BASE_W, BASE_H = 130, 30  # Kapselgröße im Aufnahmemodus (Basis-Einheiten, werden mit DPI skaliert)
 MAX_W = 300
-BARS = 12
+BARS = 9
 COLS = 56  # Spalten der Wasseroberfläche
 
 
@@ -329,13 +329,13 @@ class Overlay:
                 self.levels.append(self.rec.level)
             for i, v in enumerate(self.levels):
                 hh = (3 + v * 15) * k
-                x = left + (29 + i * 5) * k
+                x = left + (27 + i * 4) * k
                 c.create_line(x, cy - hh / 2, x, cy + hh / 2, fill=FG, width=max(2, round(2.4 * k)),
                               capstyle="round")
             txt = fmt_time(self.rec.seconds)
-            c.create_text(left + (29 + BARS * 5 + 4) * k, cy, text=txt, fill=FG, anchor="w", font=self.timer_font)
+            c.create_text(left + (27 + BARS * 4 + 3) * k, cy, text=txt, fill=FG, anchor="w", font=self.timer_font)
             # Feste Breite für die breiteste Anzeige (59:59), damit die Kapsel beim Zählen nicht wackelt
-            self.want_w = (29 + BARS * 5 + 4 + 12) * k + self.timer_font.measure("59:59")
+            self.want_w = (27 + BARS * 4 + 3 + 9) * k + self.timer_font.measure("59:59")
         elif self.mode == "msg":
             rr = 4 * k
             dx = left + 15 * k
