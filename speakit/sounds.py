@@ -168,3 +168,28 @@ def preview(preset):
         time.sleep(0.45)
         winsound.PlaySound(stop, winsound.SND_MEMORY)
     threading.Thread(target=run, daemon=True).start()
+
+
+# ---------------------------------------------------------------- Fertig-Signal
+_plop_cache = None
+
+
+def _plop_wav():
+    """Kurzes, weiches Plop wie ein Tropfen: fallender Ton mit kleinem Nachklang."""
+    samples = [a + b for a, b in zip(sweep(620, 190, dur=0.11, vol=1.0, decay=26.0, attack=0.002),
+                                     tone(880, dur=0.11, vol=0.18, decay=40.0, harm=()))]
+    pcm = b"".join(struct.pack("<h", int(max(-1.0, min(1.0, v)) * 0.16 * 32767)) for v in samples)
+    out = io.BytesIO()
+    with wave.open(out, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(RATE)
+        w.writeframes(pcm)
+    return out.getvalue()
+
+
+def plop():
+    global _plop_cache
+    if _plop_cache is None:
+        _plop_cache = _plop_wav()
+    threading.Thread(target=lambda: winsound.PlaySound(_plop_cache, winsound.SND_MEMORY), daemon=True).start()

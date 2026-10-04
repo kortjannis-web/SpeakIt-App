@@ -57,6 +57,7 @@ class App:
         self.last_text = ""
         self.tray = None
         self.hk.enabled = bool(self.cfg["enabled"])
+        self.ui.overlay.on_full = self._done_sound
 
     # ---- Start ----
     def run(self, background=False):
@@ -301,6 +302,10 @@ class App:
         logging.error(msg)
         self._sound("error")
         self.ui.set_state("err", msg, 3500)
+
+    def _done_sound(self):
+        if self.cfg["done_sound"]:
+            sounds.plop()
 
     def _sound(self, name):
         if self.cfg["sounds"]:

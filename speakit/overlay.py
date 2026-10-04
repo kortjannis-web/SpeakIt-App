@@ -19,6 +19,8 @@ OUTLINE = "#f59e0b"  # dünne orange Kontur
 RED, GREEN, FG, MUTED = "#ef4444", "#22c55e", "#f4f4f5", "#9ca3af"
 DOT = "#f59e0b"  # Aufnahme-Punkt
 LIQUID, LIQUID_HI, LIQUID_BACK = "#f59e0b", "#fde68a", "#fbbf24"
+LIQUID_DONE = "#fcd27a"  # helleres Orange, sobald der Text fertig ist
+GLOW = 0.28  # Dauer des Übergangs in Sekunden
 BASE_W, BASE_H = 130, 30  # Kapselgröße im Aufnahmemodus (Basis-Einheiten, werden mit DPI skaliert)
 MAX_W = 300
 BARS = 12
@@ -66,6 +68,8 @@ class Overlay:
         self.lvl_t = 0.0
         self.tau = 2.0
         self.dot_col = DOT
+        self.glow_t = 0.0  # Start des Fertig-Übergangs (0 = keiner)
+        self.on_full = None  # Rückruf, sobald die Kapsel voll ist (Plop)
         self.busy_t = 0.0
         self._reset_liquid()
 
@@ -129,6 +133,7 @@ class Overlay:
             return
         if state == "busy":
             if self.mode != "busy":
+                self.glow_t = 0.0
                 self._reset_liquid()
                 self.busy_t = 0.0
                 self.want_w = BASE_W * k
@@ -255,7 +260,10 @@ class Overlay:
             self._physics(dt)
             if self.mode == "finish" and self.p > 0.985:
                 if self.close_at == 0.0:
-                    self.close_at = now + 0.03
+                    self.glow_t = now  # voll: weich heller werden, Plop, dann zuklappen
+                    self.close_at = now + GLOW + 0.12
+                    if self.on_full:
+                        self.on_full()
                 elif now >= self.close_at:
                     self.mode, self.target = "closing", 0.0  # volle Kapsel schrumpft zur Mitte
         if self.mode in (None, "closing") and self.target == 0.0 and self.e < 0.02:
@@ -370,17 +378,21 @@ class Overlay:
         ir = r - inset
         if self.p < 0.003:
             return
+        f = min(1.0, (time.monotonic() - self.glow_t) / GLOW) if self.glow_t else 0.0
+        f = f * f * (3 - 2 * f)  # weich ein- und ausblenden
+        liq, back_col = _mix(LIQUID, LIQUID_DONE, f), _mix(LIQUID_BACK, LIQUID_DONE, f)
+        hi_col = _mix(LIQUID_HI, LIQUID_DONE, f)
         # hintere, hellere Welle zuerst, dann die vordere
         back = self._layer_polys(self._surface(ix1, ix2, iy1, iy2, 1), ix1, ix2, cy, ir)
         if len(back[0]) >= 2:
             pts = [v for p in back[0] for v in p] + [v for p in reversed(back[1]) for v in p]
-            c.create_polygon(pts, fill=LIQUID_BACK, outline=LIQUID_BACK)
+            c.create_polygon(pts, fill=back_col, outline=back_col)
         top, bottom, hi = self._layer_polys(self._surface(ix1, ix2, iy1, iy2, 0), ix1, ix2, cy, ir)
         if len(top) >= 2:
             pts = [v for p in top for v in p] + [v for p in reversed(bottom) for v in p]
-            c.create_polygon(pts, fill=LIQUID, outline=LIQUID)
+            c.create_polygon(pts, fill=liq, outline=liq)
             if len(hi) >= 2:
-                c.create_line([v for p in hi for v in p], fill=LIQUID_HI, width=max(1, round(1.5 * k)), smooth=True)
+                c.create_line([v for p in hi for v in p], fill=hi_col, width=max(1, round(1.5 * k)), smooth=True)
         # Spritzer starten an der Oberfläche
         if self.pending_drop and top:
             self.pending_drop = False
@@ -398,4 +410,11 @@ class Overlay:
                 dr["life"] = 0
                 continue
             rr = dr["r"]
-            c.create_oval(dr["x"] - rr, dr["y"] - rr, dr["x"] + rr, dr["y"] + rr, fill=LIQUID, outline=LIQUID)
+            c.create_oval(dr["x"] - rr, dr["y"] - rr, dr["x"] + rr, dr["y"] + rr, fill=liq, outline=liq)
+
+
+def _mix(a, b, f):
+    """Farbe a nach b überblenden (f 0..1)."""
+    ca = [int(a[i:i + 2], 16) for i in (1, 3, 5)]
+    cb = [int(b[i:i + 2], 16) for i in (1, 3, 5)]
+    return "#" + "".join(f"{round(x + (y - x) * f):02x}" for x, y in zip(ca, cb))

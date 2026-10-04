@@ -27,6 +27,7 @@ DEFAULTS = {
     "clean_trigger": "double",  # double = nur nach Doppeltipp | always = jede Aufnahme
     "cleanup_model": "claude-haiku-4-5-20251001",
     "sounds": True,
+    "done_sound": True,  # Plop, sobald der Text fertig ist
     "sound_preset": "Sanft",
     "enabled": True,
     "tutorial_done": False,

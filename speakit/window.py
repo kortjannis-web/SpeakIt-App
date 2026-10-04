@@ -902,6 +902,7 @@ class MainWindow:
                   f"{de1(l_without)} s."),
         ).pack(anchor="w", padx=20, pady=(0, 8))
         self.v_sounds = sw("Töne", cfg["sounds"])
+        self.v_done = sw("Fertig-Ton (Plop)", cfg["done_sound"])
         self.v_auto = sw("Mit Windows starten", autostart.is_enabled())
 
         keys = ctk.CTkFrame(sc, fg_color=CARD, corner_radius=16, border_width=1, border_color=LINE)
@@ -950,7 +951,8 @@ class MainWindow:
         cfg.set(
             hotkey=list(self.hotkey), mode=MODES[self.w_mode.var.get()], language=LANGS[self.w_lang.var.get()],
             mic="" if mic == "Standard" else mic, clean_trigger=TRIGGERS[self.w_trig.var.get()], stt_provider=self.w_prov.var.get(),
-            cleanup=bool(self.clean_var.get()), sounds=self.v_sounds.get(), sound_preset=self.snd_var.get(),
+            cleanup=bool(self.clean_var.get()), sounds=self.v_sounds.get(), done_sound=self.v_done.get(),
+            sound_preset=self.snd_var.get(),
         )
         save_env({k: e.get().strip() for k, e in self.key_entries.items() if e.get().strip()})
         if self.v_auto.get() != autostart.is_enabled():
