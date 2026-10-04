@@ -62,7 +62,17 @@ Unten mittig fährt eine kleine Kapsel aus der Mitte auf: oranger Punkt (schwabb
 - Claude Haiku 4.5: ca. 1 $ pro Mio. Eingabe-Token, 5 $ pro Mio. Ausgabe-Token
 - Pro Diktat gehen Prompt und Begriffslisten mit (ca. 2.000 bis 3.000 Token): grob 0,3 bis 0,5 Cent pro Minute Sprechen
 
-## Download und Auto-Update
+## Installation in einem Schritt (empfohlen, kostenlos)
+
+PowerShell öffnen (Windows-Taste, "PowerShell" tippen, Enter) und einfügen:
+```
+irm https://raw.githubusercontent.com/kortjannis-web/SpeakIt-App/master/setup.ps1 | iex
+```
+Das installiert bei Bedarf Git und Python (über winget), lädt SpeakIt nach `%LOCALAPPDATA%\SpeakIt-App`, richtet Startmenü und Autostart ein und startet die App. Updates holt sich die App danach selbst von GitHub (beim Start und alle 6 Stunden), aktiv beim nächsten Start oder sofort über den Tray: "Update aktivieren (Neustart)".
+
+Warum nicht die EXE? Die EXE ist nicht digital signiert. Ist in Windows 11 die "Intelligente App-Steuerung" an, wird sie komplett blockiert. Der Weg über Python läuft auch dort.
+
+## Download als EXE und Auto-Update
 
 Download für alle (ohne Keys, Empfänger trägt eigene Keys ein):
 https://github.com/kortjannis-web/SpeakIt-App/releases/latest/download/SpeakIt.exe
