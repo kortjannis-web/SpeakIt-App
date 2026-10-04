@@ -1,4 +1,5 @@
 """Hauptfenster: Verlauf mit Wort-Korrektur, Kontexte, Statistik, Einstellungen."""
+import ctypes
 import datetime
 import math
 import os
@@ -10,12 +11,15 @@ from . import autostart, sounds
 from .audio import list_mics
 from .config import DATA, FROZEN, read_env_file, save_env
 from .hotkey import pretty
+from .icon import drop_icon
+from .liquid import LiquidButton, text_width
 from .overlay import dpi_scale
 from .storage import WAIT, _split, cleanup_comparison, period_starts
 
 BG, SIDE, CARD, LINE = "#F4F1EA", "#ECE8DF", "#FFFFFF", "#E3DED2"
 TXT, MUT, ACC, ACC_H, GREEN, RED = "#1D1C1A", "#7B766B", "#1D1C1A", "#3A3835", "#2E7D5B", "#C2410C"
 SEL = "#DDD8CB"
+ORANGE = "#f59e0b"
 
 MODES = {
     "Halten oder Tippen (beides)": "both",
@@ -26,6 +30,23 @@ LANGS = {"Deutsch": "de", "Englisch": "en", "Automatisch": ""}
 COPILOT_KEY = ["windows", "shift", "f23"]
 PAGES = ["Verlauf", "Kontexte", "Statistik", "Einstellungen"]
 DAYS = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"]
+
+
+def style_titlebar(win, color="#f7b24d", text="#1D1C1A"):
+    """Windows 11: Titelleiste und Rand dezent orange (auf Windows 10 wirkungslos, stört nicht)."""
+    try:
+        win.update_idletasks()
+        hwnd = ctypes.windll.user32.GetParent(win.winfo_id())
+
+        def cref(h):
+            h = h.lstrip("#")
+            return int(h[0:2], 16) | (int(h[2:4], 16) << 8) | (int(h[4:6], 16) << 16)
+
+        for attr, val in ((35, color), (34, color), (36, text)):
+            v = ctypes.c_int(cref(val))
+            ctypes.windll.dwmapi.DwmSetWindowAttribute(hwnd, attr, ctypes.byref(v), 4)
+    except Exception:
+        pass
 
 
 def day_label(ts: float) -> str:
@@ -54,9 +75,9 @@ class MainWindow:
         r = self.root
         r.title("SpeakIt")
         r.configure(fg_color=BG)
-        w, h = 1000, 700
+        w, h = 1000, 760
         r.geometry(f"{w}x{h}+{(r.winfo_screenwidth() - w) // 2}+{(r.winfo_screenheight() - h) // 2}")
-        r.minsize(880, 580)
+        r.minsize(900, 700)
         r.protocol("WM_DELETE_WINDOW", self.hide)
         self.f_title = ctk.CTkFont(family="Segoe UI Semibold", size=24)
         self.f_h = ctk.CTkFont(family="Segoe UI Semibold", size=14)
@@ -66,15 +87,17 @@ class MainWindow:
         side = ctk.CTkFrame(r, fg_color=SIDE, corner_radius=0, width=210)
         side.pack(side="left", fill="y")
         side.pack_propagate(False)
-        ctk.CTkLabel(side, text="●  SpeakIt", font=ctk.CTkFont(family="Segoe UI Semibold", size=18),
-                     text_color=TXT).pack(anchor="w", padx=22, pady=(26, 22))
+        self.logo_img = ctk.CTkImage(light_image=drop_icon(96), size=(30, 30))
+        ctk.CTkLabel(side, text=" SpeakIt", image=self.logo_img, compound="left",
+                     font=ctk.CTkFont(family="Segoe UI Semibold", size=18),
+                     text_color=TXT).pack(anchor="w", padx=20, pady=(24, 20))
         self.enabled_var = ctk.BooleanVar(value=bool(self.app.cfg["enabled"]))
         pw = ctk.CTkFrame(side, fg_color=CARD, corner_radius=14, border_width=1, border_color=LINE)
         pw.pack(fill="x", padx=12, pady=(0, 14))
         self.power_label = ctk.CTkLabel(pw, text="", font=self.f_h, text_color=TXT)
         self.power_label.pack(side="left", padx=(14, 0), pady=12)
         ctk.CTkSwitch(pw, text="", variable=self.enabled_var, command=self._on_power, width=52,
-                      switch_width=46, switch_height=24, progress_color=GREEN).pack(side="right", padx=14)
+                      switch_width=46, switch_height=24, progress_color=ORANGE).pack(side="right", padx=14)
         self.clean_var = ctk.BooleanVar(value=bool(self.app.cfg["cleanup"]))
         cl = ctk.CTkFrame(side, fg_color=CARD, corner_radius=14, border_width=1, border_color=LINE)
         cl.pack(fill="x", padx=12, pady=(0, 14))
@@ -82,17 +105,15 @@ class MainWindow:
         top.pack(fill="x")
         ctk.CTkLabel(top, text="Nachbearbeitung", font=self.f_n, text_color=TXT).pack(side="left", padx=(14, 0), pady=(10, 0))
         ctk.CTkSwitch(top, text="", variable=self.clean_var, command=self._on_clean, width=44, switch_width=40,
-                      switch_height=22, progress_color=GREEN).pack(side="right", padx=(0, 10), pady=(10, 0))
-        self.clean_hint = ctk.CTkLabel(cl, text="", font=self.f_s, text_color=MUT, justify="left", wraplength=170)
+                      switch_height=22, progress_color=ORANGE).pack(side="right", padx=(0, 10), pady=(10, 0))
+        self.clean_hint = ctk.CTkLabel(cl, text="", font=self.f_s, text_color=MUT, justify="left", wraplength=172)
         self.clean_hint.pack(anchor="w", padx=14, pady=(2, 10))
         self.nav = {}
         for name in PAGES:
-            b = ctk.CTkButton(
-                side, text=name, anchor="w", height=40, corner_radius=12, font=self.f_n,
-                fg_color="transparent", hover_color=SEL, text_color=TXT,
-                command=lambda n=name: self.show_page(n),
-            )
-            b.pack(fill="x", padx=12, pady=2)
+            b = LiquidButton(side, text=name, command=lambda n=name: self.show_page(n), width=180, height=36,
+                             bg=SIDE, fg=TXT, fg_active=TXT, font=("Segoe UI", 14), radius=12, hover=0.4,
+                             anchor="w", padx=16)
+            b.pack(fill="x", padx=12, pady=1)
             self.nav[name] = b
         self.side_info = ctk.CTkLabel(side, text="", font=self.f_s, text_color=MUT, justify="left")
         self.side_info.pack(side="bottom", anchor="w", padx=22, pady=(4, 18))
@@ -101,15 +122,15 @@ class MainWindow:
         self.mini_rows = {}
         for key in ("Heute", "Monat", "Gesamt"):
             mrow = ctk.CTkFrame(self.mini, fg_color="transparent")
-            mrow.pack(fill="x", padx=12, pady=(8, 0) if key == "Heute" else (4, 0))
+            mrow.pack(fill="x", padx=12, pady=(6, 0) if key == "Heute" else (2, 0))
             ctk.CTkLabel(mrow, text=key, font=self.f_s, text_color=MUT).pack(anchor="w")
             lab = ctk.CTkLabel(mrow, text="", font=self.f_s, text_color=TXT)
             lab.pack(anchor="w")
             self.mini_rows[key] = lab
         ctk.CTkLabel(self.mini, text="", height=4).pack()
-        ctk.CTkButton(side, text="Tutorial anzeigen", height=34, corner_radius=12, font=self.f_s, fg_color="transparent",
-                      hover_color=SEL, text_color=TXT, border_width=1, border_color=LINE,
-                      command=self.open_tutorial).pack(side="bottom", fill="x", padx=12, pady=(0, 8))
+        LiquidButton(side, text="Tutorial anzeigen", command=self.open_tutorial, width=180, height=34, bg=SIDE,
+                     border=LINE, fg=TXT, fg_active=TXT, font=("Segoe UI", 12), radius=12, hover=0.85).pack(
+            side="bottom", fill="x", padx=12, pady=(0, 8))
 
         self.content = ctk.CTkFrame(r, fg_color=BG, corner_radius=0)
         self.content.pack(side="left", fill="both", expand=True)
@@ -130,13 +151,29 @@ class MainWindow:
             ctk.CTkLabel(parent, text=sub, font=self.f_s, text_color=MUT, justify="left",
                          wraplength=640).pack(anchor="w", padx=34, pady=(0, 14))
 
-    def _btn(self, parent, text, cmd, primary=True, **kw):
-        if primary:
-            return ctk.CTkButton(parent, text=text, command=cmd, font=self.f_n, corner_radius=12, height=36,
-                                 fg_color=ACC, hover_color=ACC_H, text_color="white", **kw)
-        return ctk.CTkButton(parent, text=text, command=cmd, font=self.f_n, corner_radius=12, height=36,
-                             fg_color="transparent", hover_color=SEL, text_color=TXT,
-                             border_width=1, border_color=LINE, **kw)
+    def _bg_of(self, w):
+        """Hintergrundfarbe des Elternelements, damit die runden Ecken eines Buttons sauber aufliegen."""
+        while w is not None:
+            try:
+                col = w.cget("fg_color")
+                if isinstance(col, (tuple, list)):
+                    col = col[0]
+                if col and col != "transparent":
+                    return col
+            except Exception:
+                try:
+                    return w.cget("bg")
+                except Exception:
+                    pass
+            w = getattr(w, "master", None)
+        return BG
+
+    def _btn(self, parent, text, cmd, primary=True, width=None, **kw):
+        font = ("Segoe UI", 13)
+        w = width or max(86, text_width(text, font) + 40)
+        return LiquidButton(parent, text=text, command=cmd, width=w, height=36, bg=self._bg_of(parent),
+                            fill=ACC if primary else None, border=None if primary else LINE,
+                            fg="white" if primary else TXT, fg_active=TXT, font=font, radius=12, hover=0.85)
 
     # ------------------------------------------------------------ Anzeigen
     def show(self, page=None):
@@ -147,6 +184,7 @@ class MainWindow:
         self.root.attributes("-topmost", True)  # sonst bleibt es hinter dem aktiven Fenster
         self.root.after(300, lambda: self.root.attributes("-topmost", False))
         self.root.focus_force()
+        self.root.after(60, lambda: style_titlebar(self.root))
         self.show_page(page or self.page)
 
     def hide(self):
@@ -160,7 +198,7 @@ class MainWindow:
         self.page = name
         for n, f in self.pages.items():
             f.pack_forget()
-            self.nav[n].configure(fg_color=SEL if n == name else "transparent")
+            self.nav[n].set_selected(n == name)
         self.pages[name].pack(fill="both", expand=True)
         if name == "Verlauf":
             self.refresh_history()
@@ -209,6 +247,7 @@ class MainWindow:
         dlg.geometry(f"{w}x{h}+{self.root.winfo_x() + 120}+{self.root.winfo_y() + 40}")
         dlg.transient(self.root)
         dlg.after(150, lambda: (dlg.lift(), dlg.focus_force()))
+        dlg.after(200, lambda: style_titlebar(dlg))
         body = ctk.CTkFrame(dlg, fg_color="transparent")
         body.pack(fill="both", expand=True)
         state = {"i": 0}
@@ -368,7 +407,7 @@ class MainWindow:
     def _clean_text(self):
         on = bool(self.clean_var.get())
         self.clean_hint.configure(
-            text="An: Füllwörter raus, Zeichensetzung, Kontextkorrektur." if on
+            text="An: glättet den Text und korrigiert Wörter." if on
             else f"Aus: Rohtext, bis zu 2x schneller und ca. {cleanup_comparison()['factor']:.0f}x günstiger.")
 
     def _power_text(self):
@@ -442,7 +481,7 @@ class MainWindow:
         ctk.CTkLabel(top, text=t, font=self.f_h, text_color=TXT).pack(side="left")
         ctk.CTkLabel(top, text="  " + meta, font=self.f_s, text_color=MUT).pack(side="left")
         tw = tk.Text(c, wrap="word", relief="flat", borderwidth=0, highlightthickness=0, bg=CARD, fg=TXT,
-                     font=("Segoe UI", 12), cursor="hand2", padx=0, pady=0, spacing1=2, spacing3=2,
+                     font=("Segoe UI", -round(16 * dpi_scale())), cursor="hand2", padx=0, pady=0, spacing1=2, spacing3=2,
                      selectbackground="#CFE0FF", inactiveselectbackground="#CFE0FF", selectforeground=TXT)
         state = {"raw": False}
 
@@ -467,12 +506,11 @@ class MainWindow:
             self.refresh_history()
 
         for text, cmd in (("✕", delete), ("Kopieren", copy)):
-            ctk.CTkButton(top, text=text, command=cmd, width=34 if text == "✕" else 74, height=28,
-                          corner_radius=9, font=self.f_s, fg_color="transparent", hover_color=SEL,
-                          text_color=MUT if text == "✕" else TXT, border_width=0 if text == "✕" else 1,
-                          border_color=LINE).pack(side="right", padx=(6, 0))
-        raw_btn = ctk.CTkButton(top, text="Original", command=toggle, width=74, height=28, corner_radius=9,
-                                font=self.f_s, fg_color="transparent", hover_color=SEL, text_color=MUT)
+            LiquidButton(top, text=text, command=cmd, width=34 if text == "✕" else 78, height=28, bg=CARD,
+                         border=None if text == "✕" else LINE, fg=MUT if text == "✕" else TXT, fg_active=TXT,
+                         font=("Segoe UI", 12), radius=9, hover=0.85).pack(side="right", padx=(6, 0))
+        raw_btn = LiquidButton(top, text="Original", command=toggle, width=74, height=28, bg=CARD, fg=MUT,
+                               fg_active=TXT, font=("Segoe UI", 12), radius=9, hover=0.85)
         raw_btn.pack(side="right")
         tw.pack(fill="x", padx=16, pady=(8, 14))
         fill()
@@ -525,6 +563,7 @@ class MainWindow:
         dlg.geometry(f"460x470+{self.root.winfo_x() + 260}+{self.root.winfo_y() + 120}")
         dlg.transient(self.root)
         dlg.after(150, lambda: (dlg.lift(), dlg.focus_force()))
+        dlg.after(200, lambda: style_titlebar(dlg))
         pad = {"padx": 26, "anchor": "w"}
         ctk.CTkLabel(dlg, text="Wort korrigieren", font=self.f_title, text_color=TXT).pack(pady=(22, 12), **pad)
         ctk.CTkLabel(dlg, text="Falsch verstanden", font=self.f_s, text_color=MUT).pack(**pad)
@@ -555,7 +594,7 @@ class MainWindow:
         menu.configure(command=on_ctx)
         replace_var = ctk.BooleanVar(value=True)
         ctk.CTkSwitch(dlg, text="Künftig automatisch ersetzen", variable=replace_var, font=self.f_n,
-                      text_color=TXT, progress_color=GREEN).pack(pady=(10, 4), **pad)
+                      text_color=TXT, progress_color=ORANGE).pack(pady=(10, 4), **pad)
         err = ctk.CTkLabel(dlg, text="", font=self.f_s, text_color=RED)
         err.pack(**pad)
 
@@ -631,7 +670,7 @@ class MainWindow:
             if c["id"] == "general":
                 ctk.CTkLabel(f, text="immer", font=self.f_s, text_color=MUT, width=44).pack(side="left", padx=(10, 0))
             else:
-                sw = ctk.CTkSwitch(f, text="", width=44, progress_color=GREEN,
+                sw = ctk.CTkSwitch(f, text="", width=44, progress_color=ORANGE,
                                    command=lambda cid=c["id"]: self._toggle_ctx(cid, sw_vars[cid].get()))
                 sw_vars = getattr(self, "_sw_vars", {})
                 var = ctk.BooleanVar(value=c["active"])
@@ -639,9 +678,11 @@ class MainWindow:
                 self._sw_vars = sw_vars
                 sw.configure(variable=var)
                 sw.pack(side="left", padx=(10, 0), pady=8)
-            ctk.CTkButton(f, text=f"{c['name']}  ({len(c['terms'])})", anchor="w", fg_color="transparent",
-                          hover_color=SEL, text_color=TXT, font=self.f_n, height=36, corner_radius=10,
-                          command=lambda cid=c["id"]: self._select_ctx(cid)).pack(side="left", fill="x", expand=True)
+            lb = LiquidButton(f, text=f"{c['name']}  ({len(c['terms'])})", command=lambda cid=c["id"]: self._select_ctx(cid),
+                              width=150, height=36, bg=self._bg_of(f), fg=TXT, fg_active=TXT, font=("Segoe UI", 13),
+                              radius=10, hover=0.4, anchor="w", padx=10)
+            lb.set_selected(c["id"] == self.sel_ctx)
+            lb.pack(side="left", fill="x", expand=True)
         self._load_editor()
 
     def _toggle_ctx(self, cid, value):
@@ -750,16 +791,16 @@ class MainWindow:
         pr.pack(fill="x", padx=20, pady=(14, 7))
         ctk.CTkLabel(pr, text="SpeakIt aktiv", font=self.f_n, text_color=TXT, width=190, anchor="w").pack(side="left")
         ctk.CTkSwitch(pr, text="Aus = Taste wird nicht abgefangen", variable=self.enabled_var, command=self._on_power,
-                      progress_color=GREEN, font=self.f_s, text_color=MUT).pack(side="left")
+                      progress_color=ORANGE, font=self.f_s, text_color=MUT).pack(side="left")
         self.hotkey = list(cfg["hotkey"])
         self.hk_var = ctk.StringVar(value=pretty(self.hotkey))
         hk_row = ctk.CTkFrame(card, fg_color="transparent")
         hk_row.pack(fill="x", padx=20, pady=7)
         ctk.CTkLabel(hk_row, text="Taste oder Tastenkombination", font=self.f_n, text_color=TXT, width=190, anchor="w",
                      wraplength=180, justify="left").pack(side="left")
-        self.hk_btn = ctk.CTkButton(hk_row, textvariable=self.hk_var, command=self._capture, width=230, height=36,
-                                    corner_radius=10, font=self.f_n, fg_color=BG, hover_color=SEL, text_color=TXT,
-                                    border_width=1, border_color=LINE)
+        self.hk_btn = LiquidButton(hk_row, textvariable=self.hk_var, command=self._capture, width=230, height=36,
+                                   bg=CARD, fill=BG, border=LINE, fg=TXT, fg_active=TXT, font=("Segoe UI", 13),
+                                   radius=10, hover=0.85)
         self.hk_btn.pack(side="left")
         self._btn(hk_row, "Copilot-Taste", self._copilot, primary=False, width=120).pack(side="left", padx=8)
         ctk.CTkLabel(card, text="Eine einzelne Taste (z. B. Enter, F9, M) oder eine Kombination (z. B. Strg + Alt + Leertaste): "
@@ -799,7 +840,7 @@ class MainWindow:
             r = ctk.CTkFrame(card, fg_color="transparent")
             r.pack(fill="x", padx=20, pady=7)
             ctk.CTkLabel(r, text=label, font=self.f_n, text_color=TXT, width=190, anchor="w").pack(side="left")
-            ctk.CTkSwitch(r, text="", variable=var, progress_color=GREEN).pack(side="left")
+            ctk.CTkSwitch(r, text="", variable=var, progress_color=ORANGE).pack(side="left")
             return var
 
         cr = ctk.CTkFrame(card, fg_color="transparent")
@@ -807,7 +848,7 @@ class MainWindow:
         ctk.CTkLabel(cr, text="Textnachbearbeitung (Claude)", font=self.f_n, text_color=TXT, width=190, anchor="w",
                      wraplength=180, justify="left").pack(side="left")
         ctk.CTkSwitch(cr, text="Aus = bis zu 2x schneller, dafür Rohtext ohne Glättung", variable=self.clean_var,
-                      command=self._on_clean, progress_color=GREEN, font=self.f_s, text_color=MUT).pack(side="left")
+                      command=self._on_clean, progress_color=ORANGE, font=self.f_s, text_color=MUT).pack(side="left")
         cmp_ = cleanup_comparison()
         (n_s, s_with, s_without), (n_l, l_with, l_without) = WAIT["short"], WAIT["long"]
         de = lambda x: f"{x:.2f}".replace(".", ",")  # noqa: E731
