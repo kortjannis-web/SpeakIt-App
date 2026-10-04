@@ -1,14 +1,104 @@
 """LiquidButton: Button, in den beim Berühren oder Auswählen orange Flüssigkeit einfließt und
-beim Verlassen sofort wieder abfließt. Leichte Wasser-Physik (Schwappen, zwei Wellenschichten)."""
+beim Verlassen wieder abfließt.
+
+Die Welle wird nicht live berechnet: Pro Buttongröße entsteht einmal ein Satz vorgerenderter Wellenbilder
+(nahtlose Schleife, darunter durchgehend Orange). Zum Füllen wird dieses Bild nur höher geschoben und mit der
+Buttonform maskiert; fertig zusammengesetzte Bilder werden zwischengespeichert. Beim Abspielen wechseln nur noch
+fertige Bilder."""
 import math
-import random
 import time
 import tkinter as tk
 import tkinter.font as tkfont
 
+from PIL import Image, ImageChops, ImageDraw, ImageTk
+
 from .overlay import dpi_scale
 
 ORANGE, ORANGE_BACK, HIGHLIGHT = "#f59e0b", "#fbbf24", "#fde68a"
+FRAMES = 16  # Bilder der Wellenschleife
+STEPS = 48  # Füllstufen für den Zwischenspeicher
+SS = 3  # Überabtastung für glatte Kanten
+FLOW_FPS = 10  # Wellenschleife im Ruhezustand (ausgewählt oder Hover)
+
+_sprites = {}
+
+
+class Sprite:
+    """Vorgerenderte Wellenschleife und Maske für eine Buttongröße."""
+
+    def __init__(self, w, h, r, k):
+        self.w, self.h = w, h
+        self.amp = max(2.0, 2.6 * k)
+        self.pad = int(self.amp * 2 + 3)  # Platz über der Grundlinie der Welle
+        self.margin = int(self.amp + self.pad + 2)
+        mask = Image.new("L", (w * SS, h * SS), 0)
+        ImageDraw.Draw(mask).rounded_rectangle((1 * SS, 1 * SS, (w - 1) * SS - 1, (h - 1) * SS - 1),
+                                               radius=r * SS, fill=255)
+        self.mask = mask.resize((w, h), Image.LANCZOS)
+        self.frames = [self._wave(i) for i in range(FRAMES)]
+        self.cache = {}
+
+    def _wave(self, i):
+        w, k = self.w, self.amp
+        fh = self.pad + self.h + 2 * self.margin + 4
+        img = Image.new("RGBA", (w * SS, fh * SS), (0, 0, 0, 0))
+        d = ImageDraw.Draw(img)
+        ph = 2 * math.pi * i / FRAMES
+        n = max(24, w // 4)
+
+        def line(phase_off, scale, y_off, layer):
+            pts = []
+            for j in range(n + 1):
+                fx = j / n
+                if layer == 0:
+                    v = math.sin(ph - fx * 7 + phase_off) + 0.6 * math.sin(2 * ph + fx * 11 + 1.3)
+                else:
+                    v = math.sin(-ph - fx * 5 + phase_off) + 0.5 * math.sin(2 * ph - fx * 9 + 2.6)
+                pts.append((fx * w * SS, (self.pad + y_off - v * k * scale / 1.6) * SS))
+            return pts
+
+        for layer, col, off in ((1, ORANGE_BACK, -1.4), (0, ORANGE, 0.0)):
+            top = line(1.9 if layer else 0.0, 1.0, off, layer)
+            d.polygon(top + [(w * SS, fh * SS), (0, fh * SS)], fill=col)
+            if layer == 0:
+                d.line(top, fill=HIGHLIGHT, width=max(1, int(1.1 * SS)), joint="curve")
+        return img.resize((w, fh), Image.LANCZOS)
+
+    def image(self, level, frame):
+        """Fertig maskiertes Bild für Füllstand und Wellenphase (zwischengespeichert)."""
+        q = max(0, min(STEPS, round(level * STEPS)))
+        key = (q, frame % FRAMES)
+        im = self.cache.get(key)
+        if im is None:
+            if len(self.cache) > 600:
+                self.cache.clear()
+            lv = q / STEPS
+            base = self.h * (1 - lv)  # Mitte exakt, nur an den Enden extra Weg, damit leer und voll sauber sind
+            if lv < 0.08:
+                base += self.margin * (1 - lv / 0.08)
+            elif lv > 0.92:
+                base -= self.margin * ((lv - 0.92) / 0.08)
+            top = int(round(base - self.pad))
+            canvas = Image.new("RGBA", (self.w, self.h), (0, 0, 0, 0))
+            fr = self.frames[frame % FRAMES]
+            if top < 0:
+                canvas.alpha_composite(fr, (0, 0), (0, -top))
+            elif top < self.h:
+                canvas.alpha_composite(fr, (0, top))
+            canvas.putalpha(ImageChops.multiply(canvas.getchannel("A"), self.mask))
+            im = ImageTk.PhotoImage(canvas)
+            self.cache[key] = im
+        return im
+
+
+def get_sprite(w, h, r, k):
+    key = (w, h, r, k)
+    sp = _sprites.get(key)
+    if sp is None:
+        if len(_sprites) > 24:
+            _sprites.clear()
+        sp = _sprites[key] = Sprite(w, h, r, k)
+    return sp
 
 
 class LiquidButton(tk.Canvas):
@@ -28,12 +118,14 @@ class LiquidButton(tk.Canvas):
         self.anchor_mode, self.padx = anchor, padx
         self.selected = False
         self.hovering = False
-        self.lv, self.target = 0.0, 0.0
-        self.act = 0.0  # Unruhe der Oberfläche
-        self.tilt, self.tilt_v = 0.0, 0.0  # Schwappen
-        self.t = random.random() * 10
+        self.lv, self.lvv, self.target = 0.0, 0.0, 0.0
+        self.frame = 0
+        self._phase_t = 0.0
         self._last = time.monotonic()
         self._job = None
+        self._size = None
+        self._sprite = None
+        self._items = None
         self._var = textvariable
         if textvariable is not None:
             self.text = textvariable.get()
@@ -42,9 +134,9 @@ class LiquidButton(tk.Canvas):
         self.bind("<Leave>", self._leave)
         self.bind("<ButtonPress-1>", self._press)
         self.bind("<ButtonRelease-1>", self._release)
-        self.bind("<Configure>", lambda e: self._draw())
+        self.bind("<Configure>", self._configure_event)
         self.bind("<Destroy>", self._destroy)
-        self._draw()
+        self._build()
 
     # ---------------------------------------------------------------- Steuerung
     def configure(self, cnf=None, **kw):
@@ -59,13 +151,12 @@ class LiquidButton(tk.Canvas):
 
     def _set_text(self, text):
         self.text = text
-        self._draw()
+        if self._items:
+            self.itemconfigure(self._items["text"], text=text)
 
     def set_selected(self, on: bool):
         if on != self.selected:
             self.selected = on
-            self.act = max(self.act, 0.9)
-            self.tilt_v += random.choice((-1, 1)) * 110
             self._retarget()
 
     def _retarget(self):
@@ -79,19 +170,13 @@ class LiquidButton(tk.Canvas):
 
     def _enter(self, e):
         self.hovering = True
-        self.act = max(self.act, 0.8)
-        self.tilt_v += (e.x / max(1, self.winfo_width()) - 0.5) * 2 * 120
         self._retarget()
 
     def _leave(self, e):
         self.hovering = False
-        self.act = max(self.act, 0.8)
-        self.tilt_v -= (e.x / max(1, self.winfo_width()) - 0.5) * 2 * 90
         self._retarget()
 
     def _press(self, e):
-        self.act = 1.0
-        self.tilt_v += random.choice((-1, 1)) * 140
         self._kick()
 
     def _release(self, e):
@@ -116,116 +201,77 @@ class LiquidButton(tk.Canvas):
             self._last = time.monotonic()
             self._job = self.after(33, self._step)
 
-    # ---------------------------------------------------------------- Animation
-    def _step(self):
-        self._job = None
-        now = time.monotonic()
-        dt = min(0.08, now - self._last)
-        self._last = now
-        self.t += dt * 0.8
-        self.lv += (self.target - self.lv) * (1 - math.exp(-dt * 8.0))
-        speed = abs(self.target - self.lv)
-        self.act = max(self.act * math.exp(-dt * 3.5), min(1.0, speed * 1.6))
-        self.tilt_v += (-55 * self.tilt - 3.0 * self.tilt_v) * dt
-        self.tilt = max(-9.0, min(9.0, self.tilt + self.tilt_v * dt))
-        if abs(self.lv) < 0.004 and self.target == 0.0:
-            self.lv = 0.0
-        self._draw()
-        if self.lv > 0.01 or speed > 0.003 or self.act > 0.06 or abs(self.tilt) > 0.15:
-            self._job = self.after(33, self._step)
+    # ---------------------------------------------------------------- Aufbau
+    def _dims(self):
+        w = self.winfo_width() if self.winfo_width() > 1 else self.req_w
+        h = self.winfo_height() if self.winfo_height() > 1 else self.req_h
+        return max(w, 4), max(h, 4)
 
-    # ---------------------------------------------------------------- Zeichnen
     @staticmethod
     def _rr(x1, y1, x2, y2, r):
         return [x1 + r, y1, x2 - r, y1, x2, y1, x2, y1 + r, x2, y2 - r, x2, y2, x2 - r, y2, x1 + r, y2, x1, y2,
                 x1, y2 - r, x1, y1 + r, x1, y1]
 
-    @staticmethod
-    def _extent(x, x1, x2, y1, y2, r):
-        """Senkrechter Bereich der abgerundeten Form an der Stelle x."""
-        if x < x1 + r:
-            dx = (x1 + r) - x
-        elif x > x2 - r:
-            dx = x - (x2 - r)
-        else:
-            return y1, y2
-        dy = r - math.sqrt(max(0.0, r * r - dx * dx))
-        return y1 + dy, y2 - dy
-
-    def _surface(self, x1, x2, y1, y2, layer):
-        k = self.k
-        h = y2 - y1
-        level = y2 - self.lv * (h + 3 * k) - (1.2 * k if layer else 0.0)
-        amp = (0.8 + 3.0 * self.act) * k * min(1.0, (1 - self.lv) * 5 + 0.3)
-        n = max(8, min(22, int((x2 - x1) / (10 * k))))
-        pts = []
-        for i in range(n):
-            fx = i / (n - 1)
-            if layer == 0:
-                w = math.sin(self.t * 5.0 + fx * 7) + 0.6 * math.sin(self.t * 8.3 - fx * 11 + 1.3)
-                tl = self.tilt * (fx - 0.5)
-            else:
-                w = math.sin(self.t * 3.6 - fx * 5 + 1.9) + 0.5 * math.sin(self.t * 6.1 + fx * 9 + 2.6)
-                tl = self.tilt * (0.5 - fx) * 0.7
-            pts.append((x1 + (x2 - x1) * fx, level - (w * amp + tl * k)))
-        return pts
-
-    def _layer(self, cols, x1, x2, y1, y2, r):
-        xs = [c[0] for c in cols]
-        for j in range(1, 5):
-            off = r * (1 - math.cos(j / 5 * math.pi / 2))
-            xs += [x1 + off, x2 - off]
-        xs = sorted(set(xs))
-
-        def ys(x):
-            for a, b in zip(cols, cols[1:]):
-                if a[0] <= x <= b[0]:
-                    f = (x - a[0]) / max(1e-9, b[0] - a[0])
-                    return a[1] + (b[1] - a[1]) * f
-            return cols[0][1] if x < cols[0][0] else cols[-1][1]
-
-        top, bottom, hi = [], [], []
-        for x in xs:
-            lo, up = self._extent(x, x1, x2, y1, y2, r)
-            yt = max(ys(x), lo)
-            if yt >= up:
-                continue
-            top.append((x, yt))
-            bottom.append((x, up))
-            if yt > lo + 0.4:
-                hi.append((x, yt))
-        return top, bottom, hi
-
-    def _draw(self):
-        c, k = self, self.k
-        c.delete("all")
-        w = max(self.winfo_width(), 2) if self.winfo_width() > 1 else self.req_w
-        h = max(self.winfo_height(), 2) if self.winfo_height() > 1 else self.req_h
-        r = min(self.radius * k, h / 2)
-        x1, y1, x2, y2 = 1, 1, w - 1, h - 1
+    def _build(self):
+        """Statische Teile einmal anlegen: Grundfläche, Füllbild, Rand, Text."""
+        self.delete("all")
+        w, h = self._size = self._dims()
+        self._sprite = None
+        r = min(self.radius * self.k, h / 2)
+        pts = self._rr(1, 1, w - 1, h - 1, r)
         base = self.fill or self.bg_color
-        pts = self._rr(x1, y1, x2, y2, r)
-        c.create_polygon(pts, smooth=True, fill=base, outline=base)
-        if self.lv > 0.005:
-            ir = max(2.0, r - 0.5)
-            back = self._layer(self._surface(x1, x2, y1, y2, 1), x1, x2, y1, y2, ir)
-            if len(back[0]) >= 2:
-                c.create_polygon([v for p in back[0] for v in p] + [v for p in reversed(back[1]) for v in p],
-                                 fill=ORANGE_BACK, outline=ORANGE_BACK)
-            top, bottom, hi = self._layer(self._surface(x1, x2, y1, y2, 0), x1, x2, y1, y2, ir)
-            if len(top) >= 2:
-                c.create_polygon([v for p in top for v in p] + [v for p in reversed(bottom) for v in p],
-                                 fill=ORANGE, outline=ORANGE)
-                if len(hi) >= 2 and self.lv < 0.98:
-                    c.create_line([v for p in hi for v in p], fill=HIGHLIGHT, width=max(1, round(1.2 * k)),
-                                  smooth=True)
+        self.create_polygon(pts, smooth=True, fill=base, outline=base)
+        img = self.create_image(0, 0, anchor="nw", state="hidden")
         if self.border:
-            c.create_polygon(pts, smooth=True, fill="", outline=self.border)
-        col = self.fg_active if self.lv > 0.4 else self.fg
+            self.create_polygon(pts, smooth=True, fill="", outline=self.border)
         if self.anchor_mode == "w":
-            c.create_text(self.padx * k, h / 2, text=self.text, fill=col, anchor="w", font=self.font)
+            txt = self.create_text(self.padx * self.k, h / 2, text=self.text, fill=self.fg, anchor="w",
+                                   font=self.font)
         else:
-            c.create_text(w / 2, h / 2, text=self.text, fill=col, font=self.font)
+            txt = self.create_text(w / 2, h / 2, text=self.text, fill=self.fg, font=self.font)
+        self._items = {"img": img, "text": txt}
+        self._render()
+
+    def _configure_event(self, e):
+        if self._size != self._dims():
+            self._build()
+
+    def _get_sprite(self):
+        if self._sprite is None:
+            w, h = self._size
+            self._sprite = get_sprite(w, h, int(min(self.radius * self.k, h / 2)), self.k)
+        return self._sprite
+
+    # ---------------------------------------------------------------- Animation
+    def _step(self):
+        self._job = None
+        now = time.monotonic()
+        dt = min(0.05, now - self._last)
+        self._last = now
+        a = 480 * (self.target - self.lv) - 26 * self.lvv  # leicht federnd, ein wenig Überschwingen
+        self.lvv += a * dt
+        self.lv = max(0.0, min(1.0, self.lv + self.lvv * dt))
+        moving = abs(self.target - self.lv) > 0.003 or abs(self.lvv) > 0.02
+        if not moving:
+            self.lv, self.lvv = self.target, 0.0
+        # Wellenschleife: schnell beim Füllen, im Ruhezustand langsam
+        self._phase_t += dt * (22 if moving else FLOW_FPS)
+        self.frame = int(self._phase_t) % FRAMES
+        self._render()
+        if moving or self.target > 0:
+            self._job = self.after(33 if moving else int(1000 / FLOW_FPS), self._step)
+
+    def _render(self):
+        it = self._items
+        if not it:
+            return
+        if self.lv < 0.012:
+            self.itemconfigure(it["img"], state="hidden")
+        else:
+            im = self._get_sprite().image(self.lv, self.frame)
+            self.itemconfigure(it["img"], image=im, state="normal")
+        col = self.fg_active if self.lv > 0.4 else self.fg
+        self.itemconfigure(it["text"], fill=col)
 
 
 def text_width(text, font=("Segoe UI", 13)) -> int:
