@@ -1,0 +1,8 @@
+# Eine Zeile pro Begriff (Namen, Orte, Fachwoerter). Wird Whisper und Claude mitgegeben.
+# Feste Ersetzungen: falsch => richtig
+TOPsichtbar
+Coolify
+Next.js
+Tailwind
+Hostinger
+claude code => Claude Code
