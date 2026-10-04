@@ -1,8 +1,8 @@
 """Kleine Kapsel unten mittig.
 
 Aufnahme: ruhiger roter Punkt, runde Pegelbalken, Sekundenticker.
-Verarbeitung: orange Flüssigkeit fließt von rechts ein, schwappt (Wellen + Kipp-Feder), bildet Tropfen und
-füllt die Kapsel als Fortschrittsanzeige. Ist sie voll, ist der Text fertig.
+Verarbeitung: orange Flüssigkeit strömt von rechts ein, schwappt (Wellengleichung + Kipp-Feder), spritzt und
+steigt bis zur Decke der Kapsel. Ist sie voll, ist der Text fertig und die Kapsel klappt zu.
 Die Kapsel fährt aus der Mitte auf und schrumpft zur Mitte wieder zu.
 """
 import collections
@@ -16,11 +16,11 @@ KEY = "#ff00ff"  # transparente Farbe
 BG = "#17171a"
 OUTLINE = "#767c88"  # dünne graue Kontur
 RED, GREEN, FG, MUTED = "#ef4444", "#22c55e", "#f4f4f5", "#9ca3af"
-LIQUID, LIQUID_HI = "#f59e0b", "#fcd34d"
+LIQUID, LIQUID_HI, LIQUID_BACK = "#f59e0b", "#fde68a", "#fbbf24"
 BASE_W, BASE_H = 138, 30  # Kapselgröße im Aufnahmemodus (Basis-Einheiten, werden mit DPI skaliert)
 MAX_W = 300
 BARS = 12
-ROWS = 28  # Zeilen der Flüssigkeitsoberfläche
+COLS = 56  # Spalten der Wasseroberfläche
 
 
 def dpi_scale() -> float:
@@ -143,53 +143,92 @@ class Overlay:
 
     # ------------------------------------------------------------ Flüssigkeit
     def _reset_liquid(self):
-        self.p = 0.0  # angezeigter Füllstand 0..1
-        self.h = [0.0] * ROWS  # Auslenkung der Oberfläche pro Zeile
-        self.v = [0.0] * ROWS
-        self.slosh, self.slosh_v = 0.0, 0.0  # Verschiebung der ganzen Front
-        self.tilt, self.tilt_v = 0.0, 0.0  # Kippen der Front
+        self.p = 0.0  # Füllstand 0..1 (1 = bis zur Decke)
+        self.h = [0.0] * COLS  # Wellenhöhe pro Spalte (Basis-Einheiten)
+        self.v = [0.0] * COLS
+        self.tilt, self.tilt_v = 0.0, 0.0  # Schwappen der ganzen Wassermasse
         self.drops = []
         self.kick_t = 0.0
+        self.pour_t = 0.0
         self.pending_drop = False
 
     def _physics(self, dt):
         k = self.k
         target = 1.0 if self.mode == "finish" else min(0.93, 1 - math.exp(-self.busy_t / self.tau))
-        rate = 9.0 if self.mode == "finish" else 2.4
+        rate = 8.0 if self.mode == "finish" else 2.2
         dp = (target - self.p) * min(1.0, dt * rate)
         self.p += dp
-        # Einströmen und Kicks regen die Oberfläche an
+        # Einströmen von rechts: Stoß in die rechten Spalten, Wassermasse kippt nach links
+        self.pour_t -= dt
+        if self.pour_t <= 0 and self.mode == "busy":
+            self.pour_t = random.uniform(0.35, 0.8)
+            for j in range(COLS - 7, COLS):
+                self.v[j] += random.uniform(120, 260)
+            self.tilt_v -= random.uniform(30, 70)
         self.kick_t -= dt
         if self.kick_t <= 0:
-            self.kick_t = random.uniform(0.18, 0.5)
-            self.v[random.randrange(ROWS)] += random.uniform(-260, 260)
-            self.slosh_v += random.uniform(-48, 48) + dp * 1400
-            self.tilt_v += random.uniform(-60, 60)
-        n_sub = max(1, int(dt / 0.008))
+            self.kick_t = random.uniform(0.15, 0.45)
+            self.v[random.randrange(COLS)] += random.uniform(-160, 160)
+            self.tilt_v += random.uniform(-25, 25) + dp * 500
+        n_sub = max(1, int(dt / 0.006))
         h = dt / n_sub
         for _ in range(n_sub):
-            for i in range(ROWS):
+            for i in range(COLS):
                 l = self.h[i - 1] if i > 0 else self.h[i]
-                r = self.h[i + 1] if i < ROWS - 1 else self.h[i]
-                a = 800 * (l + r - 2 * self.h[i]) - 5 * self.v[i] - 30 * self.h[i]
+                r = self.h[i + 1] if i < COLS - 1 else self.h[i]
+                a = 1500 * (l + r - 2 * self.h[i]) - 3.2 * self.v[i] - 22 * self.h[i]
                 self.v[i] += a * h
-            for i in range(ROWS):
+            for i in range(COLS):
                 self.h[i] += self.v[i] * h
-            self.slosh_v += (-70 * self.slosh - 3.2 * self.slosh_v) * h
-            self.slosh += self.slosh_v * h
-            self.tilt_v += (-85 * self.tilt - 3.5 * self.tilt_v) * h
+            self.tilt_v += (-36 * self.tilt - 1.2 * self.tilt_v) * h
             self.tilt += self.tilt_v * h
-        self.slosh = max(-14, min(14, self.slosh))
-        self.tilt = max(-16, min(16, self.tilt))
-        # Tropfen
-        if self.mode == "busy" and self.p < 0.9 and random.random() < dt * 4.5:
+        self.tilt = max(-18, min(18, self.tilt))
+        # Spritzer von der Oberfläche
+        if self.mode == "busy" and self.p > 0.04 and random.random() < dt * 5.0:
             self.pending_drop = True
         for d in self.drops:
-            d["vy"] += 300 * k * dt
+            d["vy"] += 520 * k * dt
             d["x"] += d["vx"] * dt
             d["y"] += d["vy"] * dt
             d["life"] -= dt
         self.drops = [d for d in self.drops if d["life"] > 0]
+
+    def _surface(self, x1, x2, y1, y2, layer=0):
+        """Oberfläche als Liste (x, y), y wächst nach unten. layer 1 = hintere, versetzte Welle."""
+        k = self.k
+        d = y2 - y1
+        level = y2 - self.p * (d + 4 * k) - (1.6 * k if layer else 0.0)
+        amp = max(0.0, min(1.0, (1 - self.p) * 3.0))  # nahe der Decke glättet sich alles
+        inflow = 9 * math.exp(-self.busy_t * 1.4) if self.mode == "busy" else 0.0  # anfangs rechts höher
+        hh = list(self.h)
+        for _ in range(3):  # glätten, damit die Fläche weich fließt statt zackig zu sein
+            hh = [(hh[max(i - 1, 0)] + 2 * hh[i] + hh[min(i + 1, COLS - 1)]) / 4 for i in range(COLS)]
+        t = self.busy_t
+        w = x2 - x1
+        pts = []
+        for i in range(COLS):
+            fx = i / (COLS - 1)
+            if layer == 0:
+                # Hauptwelle: zwei gegenläufige Wanderwellen plus Simulation
+                rip = 1.9 * math.sin(t * 3.4 - fx * 7.0) + 1.1 * math.sin(t * 5.6 + fx * 11.0 + 0.8)
+                wave = hh[i] * 1.25 + self.tilt * (fx - 0.5) * 1.7 + inflow * (fx ** 2)
+            else:
+                # Hintere Welle: langsamer, andere Phase, flacher
+                rip = 2.2 * math.sin(t * 2.3 - fx * 5.0 + 1.9) + 0.9 * math.sin(t * 4.1 + fx * 8.5 + 2.6)
+                wave = hh[COLS - 1 - i] * 0.7 + self.tilt * (0.5 - fx) * 1.2
+            pts.append((x1 + w * fx, level - (wave + rip) * k * amp))
+        return pts
+
+    def _extent(self, x, x1, x2, cy, r):
+        """Senkrechter Bereich der Kapsel an der Stelle x."""
+        if x < x1 + r:
+            dx = (x1 + r) - x
+        elif x > x2 - r:
+            dx = x - (x2 - r)
+        else:
+            return cy - r, cy + r
+        half = math.sqrt(max(0.0, r * r - dx * dx))
+        return cy - half, cy + half
 
     # ------------------------------------------------------------ Zeichnen
     def tick(self):
@@ -209,8 +248,8 @@ class Overlay:
                 if self.close_at == 0.0:
                     self.close_at = now + 0.18
                 elif now >= self.close_at:
-                    self.mode, self.target = None, 0.0
-        if self.mode is None and self.target == 0.0 and self.e < 0.02:
+                    self.mode, self.target = "closing", 0.0  # volle Kapsel schrumpft zur Mitte
+        if self.mode in (None, "closing") and self.target == 0.0 and self.e < 0.02:
             self.cv.delete("all")
             self.win.withdraw()
             self.visible = False
@@ -241,7 +280,7 @@ class Overlay:
         c.create_oval(x1, y1, x1 + d, y2, fill=BG, outline=BG)
         c.create_oval(x2 - d, y1, x2, y2, fill=BG, outline=BG)
         c.create_rectangle(x1 + r, y1, x2 - r, y2, fill=BG, outline=BG)
-        if self.mode in ("busy", "finish"):
+        if self.mode in ("busy", "finish", "closing"):
             self._draw_liquid(x1, y1, x2, y2)
         c.create_arc(x1, y1, x1 + d, y2, start=90, extent=180, style="arc", outline=OUTLINE, width=lw)
         c.create_arc(x2 - d, y1, x2, y2, start=270, extent=180, style="arc", outline=OUTLINE, width=lw)
@@ -271,46 +310,69 @@ class Overlay:
             c.create_oval(dx - rr, cy - rr, dx + rr, cy + rr, fill=self.msg_col, outline=self.msg_col)
             c.create_text(left + 27 * k, cy, text=self.text, fill=FG, anchor="w", font=("Segoe UI", 9))
 
+    def _layer_polys(self, cols, ix1, ix2, cy, ir):
+        """Fläche unter einer Oberfläche, an den runden Enden der Kapsel sauber abgeschnitten."""
+        xs = [c_[0] for c_ in cols]
+        for j in range(1, 14):
+            off = ir * (1 - math.cos(j / 14 * math.pi / 2))
+            xs += [ix1 + off, ix2 - off]
+        xs = sorted(set(xs))
+
+        def ysurf(x):
+            for a_, b_ in zip(cols, cols[1:]):
+                if a_[0] <= x <= b_[0]:
+                    f = (x - a_[0]) / max(1e-9, b_[0] - a_[0])
+                    return a_[1] + (b_[1] - a_[1]) * f
+            return cols[0][1] if x < cols[0][0] else cols[-1][1]
+
+        top, bottom, hi = [], [], []
+        for x in xs:
+            ys = ysurf(x)
+            lo, up = self._extent(x, ix1, ix2, cy, ir)
+            yt = max(ys, lo)
+            if yt >= up:
+                continue
+            top.append((x, yt))
+            bottom.append((x, up))
+            if yt > lo + 0.3:
+                hi.append((x, yt))
+        return top, bottom, hi
+
     def _draw_liquid(self, x1, y1, x2, y2):
         c, k = self.cv, self.k
         d = y2 - y1
         r = d / 2
         cy = (y1 + y2) / 2
         inset = 1.5 * k
-        ix1, ix2 = x1 + inset, x2 - inset
-        front = ix2 - (ix2 - ix1) * self.p
-        if self.p < 0.004:
-            front = ix2 + 1
-        left_pts, right_pts, front_pts = [], [], []
-        for i in range(ROWS):
-            frac = i / (ROWS - 1)
-            y = y1 + inset + (d - 2 * inset) * frac
-            sp = self._span(y, ix1, ix2, cy, r - inset)
-            if not sp:
-                continue
-            rip = (1.4 * math.sin(self.busy_t * 5.0 + i * 0.55) + 0.8 * math.sin(self.busy_t * 8.3 - i * 0.9)) * (1 - self.p * 0.6)
-            fx = front + (self.h[i] + rip + self.slosh + self.tilt * (frac - 0.5)) * k
-            lx = max(fx, sp[0])
-            if lx >= sp[1]:
-                continue
-            left_pts.append((lx, y))
-            right_pts.append((sp[1], y))
-            front_pts.append((lx, y))
-        if len(left_pts) >= 2:
-            pts = [v for p in left_pts for v in p] + [v for p in reversed(right_pts) for v in p]
+        ix1, ix2, iy1, iy2 = x1 + inset, x2 - inset, y1 + inset, y2 - inset
+        ir = r - inset
+        if self.p < 0.003:
+            return
+        # hintere, hellere Welle zuerst, dann die vordere
+        back = self._layer_polys(self._surface(ix1, ix2, iy1, iy2, 1), ix1, ix2, cy, ir)
+        if len(back[0]) >= 2:
+            pts = [v for p in back[0] for v in p] + [v for p in reversed(back[1]) for v in p]
+            c.create_polygon(pts, fill=LIQUID_BACK, outline=LIQUID_BACK)
+        top, bottom, hi = self._layer_polys(self._surface(ix1, ix2, iy1, iy2, 0), ix1, ix2, cy, ir)
+        if len(top) >= 2:
+            pts = [v for p in top for v in p] + [v for p in reversed(bottom) for v in p]
             c.create_polygon(pts, fill=LIQUID, outline=LIQUID)
-            hi = [v for p in front_pts for v in p]
-            c.create_line(hi, fill=LIQUID_HI, width=max(1, round(1.6 * k)), smooth=True)
-        # Tropfen vor der Front
-        if getattr(self, "pending_drop", False) and front_pts:
+            if len(hi) >= 2:
+                c.create_line([v for p in hi for v in p], fill=LIQUID_HI, width=max(1, round(1.5 * k)), smooth=True)
+        # Spritzer starten an der Oberfläche
+        if self.pending_drop and top:
             self.pending_drop = False
-            px, py = random.choice(front_pts)
-            self.drops.append({"x": px - 1, "y": py, "vx": -random.uniform(35, 85) * k,
-                               "vy": -random.uniform(5, 60) * k, "r": random.uniform(1.1, 2.3) * k,
-                               "life": random.uniform(0.4, 0.8)})
+            px, py = random.choice(top)
+            self.drops.append({"x": px, "y": py - k, "vx": random.uniform(-45, 45) * k,
+                               "vy": -random.uniform(90, 190) * k, "r": random.uniform(1.1, 2.2) * k,
+                               "life": random.uniform(0.35, 0.7)})
         for dr in self.drops:
-            sp = self._span(dr["y"], ix1, ix2, cy, r - inset)
-            if not sp or not (sp[0] < dr["x"] < sp[1]):
+            lo, up = self._extent(dr["x"], ix1, ix2, cy, ir)
+            if not (ix1 < dr["x"] < ix2) or dr["y"] < lo or dr["y"] > up:
+                dr["life"] = 0
+                continue
+            ys = min(top, key=lambda s: abs(s[0] - dr["x"]))[1] if top else up
+            if dr["vy"] > 0 and dr["y"] >= ys:  # zurück im Wasser: Tropfen verschwindet
                 dr["life"] = 0
                 continue
             rr = dr["r"]
