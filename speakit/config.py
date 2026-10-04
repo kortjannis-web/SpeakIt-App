@@ -24,6 +24,7 @@ DEFAULTS = {
     "language": "de",  # "" = automatisch
     "stt_provider": "groq",  # groq | openai
     "cleanup": True,
+    "clean_trigger": "double",  # double = nur nach Doppeltipp | always = jede Aufnahme
     "cleanup_model": "claude-haiku-4-5-20251001",
     "sounds": True,
     "sound_preset": "Sanft",

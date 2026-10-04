@@ -65,6 +65,7 @@ class Overlay:
         self.levels = collections.deque([0.0] * BARS, maxlen=BARS)
         self.lvl_t = 0.0
         self.tau = 2.0
+        self.dot_col = DOT
         self.busy_t = 0.0
         self._reset_liquid()
 
@@ -115,7 +116,11 @@ class Overlay:
             if not self._recording():
                 self.mode, self.target = None, 0.0
             return
+        if state == "rec_clean":  # Feinschliff aktiv: Punkt wird rot
+            self.dot_col = RED
+            return
         if state == "rec":
+            self.dot_col = DOT
             self.levels.extend([0.0] * BARS)
             self.want_w = BASE_W * k
             self._open("rec")
@@ -307,7 +312,8 @@ class Overlay:
         left = x1
         if self.mode == "rec":
             dx, dy = left + 15 * k, cy
-            c.create_oval(dx - 4.6 * k, dy - 4.6 * k, dx + 4.6 * k, dy + 4.6 * k, fill=DOT, outline=DOT)
+            col = self.dot_col
+            c.create_oval(dx - 4.6 * k, dy - 4.6 * k, dx + 4.6 * k, dy + 4.6 * k, fill=col, outline=col)
             self.lvl_t += 1
             if self.lvl_t % 2 == 0:
                 self.levels.append(self.rec.level)

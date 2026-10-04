@@ -27,6 +27,7 @@ HALLUCINATIONS = {
 
 
 IDLE, OFF = "#f59e0b", "#b8b2a4"
+DOUBLE_TAP = 0.45  # zweiter Druck innerhalb dieser Zeit = Feinschliff mit Claude
 
 
 def _icon(color):
@@ -48,6 +49,9 @@ class App:
         self.recording = False
         self.press_started = False
         self.press_t = 0.0
+        self.start_t = 0.0
+        self.last_tap_t = 0.0
+        self.rec_clean = False  # Feinschliff für die laufende Aufnahme (Doppeltipp)
         self.pending = 0
         self.last_text = ""
         self.tray = None
@@ -146,15 +150,30 @@ class App:
         threading.Timer(1.0, lambda: os._exit(0)).start()
 
     # ---- Aufnahme-Logik ----
+    def _gesture(self):
+        return bool(self.cfg["cleanup"]) and self.cfg["clean_trigger"] == "double"
+
+    def _mark_clean(self):
+        self.rec_clean = True
+        self.ui.set_state("rec_clean")
+
     def on_press(self):
         with self.lock:
+            now = time.time()
             if self.recording:
+                if self._gesture() and not self.rec_clean and now - self.start_t < DOUBLE_TAP:
+                    self._mark_clean()  # Doppeltipp: Aufnahme läuft weiter, jetzt mit Feinschliff
+                    self.press_started = True
+                    self.press_t = now
+                    return
                 self.press_started = False
                 self._stop()
                 return
             if self._start():
                 self.press_started = True
-                self.press_t = time.time()
+                self.press_t = self.start_t = now
+                if self._gesture() and now - self.last_tap_t < DOUBLE_TAP:
+                    self._mark_clean()  # Modus "Halten": kurz tippen, dann halten
 
     def on_release(self):
         with self.lock:
@@ -166,6 +185,7 @@ class App:
             if time.time() - self.press_t >= self.cfg["hold_threshold"]:
                 self._stop()
             elif self.cfg["mode"] == "hold":
+                self.last_tap_t = time.time()
                 self.cancel(locked=True)
 
     def cancel(self, locked=False):
@@ -191,6 +211,7 @@ class App:
             self._error(f"Mikrofon: {str(e)[:40]}")
             return False
         self.recording = True
+        self.rec_clean = False
         self._sound("start")
         self._tray_color("#ef4444")
         self.ui.set_state("rec")
@@ -218,12 +239,13 @@ class App:
         self.pending += 1
         self._tray_color("#fbbf24")
         secs_ = len(pcm) / 16000
-        eta = (1.6 + secs_ * 0.04) if self.cfg["cleanup"] else (0.8 + secs_ * 0.02)
+        use_clean = bool(self.cfg["cleanup"]) and (self.cfg["clean_trigger"] == "always" or self.rec_clean)
+        eta = (1.6 + secs_ * 0.04) if use_clean else (0.8 + secs_ * 0.02)
         self.ui.set_state("busy", f"{eta:.1f}")
-        self.pool.submit(self._process, pcm, title)
+        self.pool.submit(self._process, pcm, title, use_clean)
 
     # ---- Verarbeitung ----
-    def _process(self, pcm, title):
+    def _process(self, pcm, title, use_clean):
         t0 = time.time()
         secs = len(pcm) / 16000
         try:
@@ -236,7 +258,7 @@ class App:
                 self.ui.set_state("done", "Nichts erkannt", 1200)
                 return
             text, t_in, t_out = preclean(raw), 0, 0  # kostenlos, immer
-            if self.cfg["cleanup"]:
+            if use_clean:
                 text, t_in, t_out = clean(
                     text, self.cfg["cleanup_model"], self.contexts.llm_context(), title
                 )

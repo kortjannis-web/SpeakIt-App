@@ -21,6 +21,7 @@ TXT, MUT, ACC, ACC_H, GREEN, RED = "#1D1C1A", "#7B766B", "#1D1C1A", "#3A3835", "
 SEL = "#DDD8CB"
 ORANGE = "#f59e0b"
 
+TRIGGERS = {"Nur per Doppeltipp": "double", "Bei jeder Aufnahme": "always"}
 MODES = {
     "Halten oder Tippen (beides)": "both",
     "Nur halten (Push-to-talk)": "hold",
@@ -226,11 +227,16 @@ class MainWindow:
         steps = [
             ("Willkommen bei SpeakIt",
              "SpeakIt schreibt, was du sagst. In jedes Textfeld, in jedem Programm: Mails, Chats, Editor, Browser. "
-             "Dieses kurze Tutorial zeigt dir in fünf Schritten, wie es geht.", self._ill_welcome),
+             "Dieses kurze Tutorial zeigt dir in sechs Schritten, wie es geht.", self._ill_welcome),
             ("Taste halten und sprechen",
              f"Halte {key} gedrückt, sprich und lass los. Der Text erscheint sofort dort, wo dein Cursor steht. "
              "Tippst du die Taste nur kurz an, läuft die Aufnahme weiter, bis du sie nochmal tippst. "
              "Mit Esc brichst du ab.", self._ill_key),
+            ("Feinschliff per Doppeltipp",
+             "Einmal drücken ist schnell und kostenlos: SpeakIt entfernt selbst Füllwörter wie \"ähm\". "
+             "Drückst du die Taste zweimal schnell hintereinander, wird der Punkt rot und Claude glättet den Text "
+             "zusätzlich (Satzbau, Zeichensetzung, falsch verstandene Wörter). Das lohnt sich für Bücher und Mails. "
+             "In den Einstellungen kannst du festlegen, dass jede Aufnahme geglättet wird.", self._ill_clean),
             ("Die kleine Anzeige",
              "Unten in der Mitte erscheint beim Sprechen eine kleine Kapsel mit Pegel und Sekundenticker. "
              "Danach füllt sich eine orange Anzeige. Ist sie bis oben voll, ist dein Text fertig und eingefügt.",
@@ -330,7 +336,7 @@ class MainWindow:
     def _ill_pill(self, c, k):
         # links: Aufnahme
         self._capsule(c, k, 30 * k, 50 * k, 138 * k, 30 * k)
-        c.create_oval(41 * k, 61 * k, 49 * k, 69 * k, fill="#ef4444", outline="#ef4444")
+        c.create_oval(41 * k, 61 * k, 49 * k, 69 * k, fill="#f59e0b", outline="#f59e0b")
         for i, hh in enumerate([4, 8, 13, 7, 15, 10, 5, 12, 8, 14, 6, 9]):
             x = (58 + i * 5) * k
             c.create_line(x, (65 - hh / 2) * k, x, (65 + hh / 2) * k, fill="#f4f4f5", width=int(2.4 * k),
@@ -355,6 +361,19 @@ class MainWindow:
                 self._capsule(c, k, x0 * k, 50 * k, 138 * k, 30 * k, fill="#f59e0b", outline="#767c88")
             c.create_text(cx * k, 112 * k, text=label, fill=MUT, font=("Segoe UI", 11))
         c.create_text(420 * k, 62 * k, text="→", fill=MUT, font=("Segoe UI", 20))
+
+    def _ill_clean(self, c, k):
+        for cx, col, label, sub_ in ((175, "#f59e0b", "1x drücken", "schnell, kostenlos"),
+                                     (435, "#ef4444", "2x drücken", "mit Feinschliff")):
+            x0 = cx - 69
+            self._capsule(c, k, x0 * k, 46 * k, 138 * k, 30 * k)
+            c.create_oval((x0 + 11) * k, 57 * k, (x0 + 19) * k, 65 * k, fill=col, outline=col)
+            for i, hh in enumerate([4, 8, 13, 7, 15, 10, 5, 12, 8, 14]):
+                x = (x0 + 28 + i * 5) * k
+                c.create_line(x, (61 - hh / 2) * k, x, (61 + hh / 2) * k, fill="#f4f4f5", width=int(2.4 * k),
+                              capstyle="round")
+            c.create_text(cx * k, 104 * k, text=label, fill=TXT, font=("Segoe UI Semibold", 12))
+            c.create_text(cx * k, 126 * k, text=sub_, fill=MUT, font=("Segoe UI", 11))
 
     def _ill_tray(self, c, k):
         W, H = 610, 170
@@ -412,8 +431,10 @@ class MainWindow:
 
     def _clean_text(self):
         on = bool(self.clean_var.get())
+        double = self.app.cfg["clean_trigger"] == "double"
         self.clean_hint.configure(
-            text="An: glättet den Text und korrigiert Wörter." if on
+            text=("An: Doppeltipp auf die Taste glättet den Text (roter Punkt)." if double
+                  else "An: glättet jeden Text und korrigiert Wörter.") if on
             else f"Aus: Rohtext, bis zu 2x schneller und ca. {cleanup_comparison()['factor']:.0f}x günstiger.")
 
     def _power_text(self):
@@ -829,6 +850,12 @@ class MainWindow:
             return make
 
         self.w_mode = row("Bedienung", opt(list(MODES), next(k for k, v in MODES.items() if v == cfg["mode"])))
+        self.w_trig = row("Feinschliff (Claude)", opt(list(TRIGGERS), next(
+            (k for k, v in TRIGGERS.items() if v == cfg["clean_trigger"]), "Nur per Doppeltipp")))
+        ctk.CTkLabel(card, text="Doppeltipp: Taste zweimal schnell drücken (im Modus \"Halten\": kurz tippen, dann halten). "
+                                "Der Punkt in der Anzeige wird rot und der Text wird von Claude geglättet. Einfaches "
+                                "Drücken bleibt schnell und kostenlos. Gut für Bücher und Mails, unnötig für Chats.",
+                     font=self.f_s, text_color=MUT, wraplength=620, justify="left").pack(anchor="w", padx=20, pady=(0, 6))
         self.w_lang = row("Sprache", opt(list(LANGS), next((k for k, v in LANGS.items() if v == cfg["language"]), "Deutsch")))
         try:
             mics = ["Standard"] + list_mics()
@@ -921,7 +948,7 @@ class MainWindow:
         mic = self.w_mic.var.get()
         cfg.set(
             hotkey=list(self.hotkey), mode=MODES[self.w_mode.var.get()], language=LANGS[self.w_lang.var.get()],
-            mic="" if mic == "Standard" else mic, stt_provider=self.w_prov.var.get(),
+            mic="" if mic == "Standard" else mic, clean_trigger=TRIGGERS[self.w_trig.var.get()], stt_provider=self.w_prov.var.get(),
             cleanup=bool(self.clean_var.get()), sounds=self.v_sounds.get(), sound_preset=self.snd_var.get(),
         )
         save_env({k: e.get().strip() for k, e in self.key_entries.items() if e.get().strip()})
@@ -934,4 +961,5 @@ class MainWindow:
             self.set_msg.configure(text="Taste unbekannt", text_color=RED)
         self.app.refresh_tray()
         self.side_info.configure(text=f"Taste: {pretty(cfg['hotkey'])}")
+        self._clean_text()
         self.dirty.update(("Verlauf", "Kontexte", "Statistik"))

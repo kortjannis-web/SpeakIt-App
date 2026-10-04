@@ -2,7 +2,7 @@
 
 Diktieren in jedes Textfeld unter Windows. Taste halten oder tippen, sprechen, Text erscheint.
 
-Ablauf: Mikrofon → Groq Whisper (Text) → Claude Haiku (Füllwörter weg, Zeichensetzung, Kontextkorrektur) → Einfügen per Strg+V.
+Ablauf: Mikrofon → Groq Whisper (Text) → kostenlose Vorreinigung (Füllwörter, Doppler) → bei Doppeltipp Claude Haiku (Satzbau, Zeichensetzung, Kontextkorrektur) → Einfügen per Strg+V.
 
 ## Installation aus dem Quellcode (einmalig)
 
@@ -49,7 +49,7 @@ Unten mittig fährt eine kleine Kapsel aus der Mitte auf: oranger Punkt (schwabb
 ## Fenster
 
 - **Schalter links oben**: SpeakIt an/aus. Aus heißt, die Taste wird nicht mehr abgefangen. Auch im Tray ("SpeakIt aktiv").
-- **Nachbearbeitung** (zweiter Schalter): Claude Haiku glättet den Text. Aus ist bis zu 2x schneller und deutlich günstiger, dafür Rohtext. Der Vergleich steht in den Einstellungen.
+- **Nachbearbeitung** (zweiter Schalter): Claude Haiku glättet den Text. Standard: nur nach **Doppeltipp** auf die Taste (im Modus "Halten": kurz tippen, dann halten), der Punkt in der Anzeige wird dann rot. Einfaches Drücken bleibt schnell und kostenlos. In den Einstellungen unter "Feinschliff (Claude)" auf "Bei jeder Aufnahme" umstellbar. Unter 6 Wörtern wird nie Haiku gefragt, und es gehen nur Begriffe mit, die im Diktat vorkommen oder ähnlich klingen.
 - **Verlauf**: letzte Diktate, kopieren, "Original" ansehen. Jedes Wort ist anklickbar (oder mehrere markieren): richtiges Wort eintragen, Kontext wählen, SpeakIt ersetzt es künftig automatisch.
 - **Kontexte**: Themen mit Begriffen und festen Korrekturen (Re:Zero, Fantasy, Webdesign, SEO & GEO, Business, KI & Cloud, eigene). Aktive gehen an Whisper und Claude, inaktive kennt Claude und nutzt sie nur bei passendem Thema.
 - **Statistik**: Diktate, Wörter, Sprechzeit, Token, Kosten für Heute, Monat, Gesamt. Heute setzt sich um 0 Uhr zurück, Monat am 1., Gesamt nie. Links unten steht es immer. Test: `python -m unittest tests.test_stats`.
