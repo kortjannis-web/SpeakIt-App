@@ -129,7 +129,7 @@ class MainWindow:
             self.mini_rows[key] = lab
         ctk.CTkLabel(self.mini, text="", height=4).pack()
         LiquidButton(side, text="Tutorial anzeigen", command=self.open_tutorial, width=180, height=34, bg=SIDE,
-                     border=LINE, fg=TXT, fg_active=TXT, font=("Segoe UI", 12), radius=12, hover=0.85).pack(
+                     border=LINE, fg=TXT, fg_active=TXT, font=("Segoe UI", 12), radius=12, hover=0.5).pack(
             side="bottom", fill="x", padx=12, pady=(0, 8))
 
         self.content = ctk.CTkFrame(r, fg_color=BG, corner_radius=0)
@@ -173,7 +173,7 @@ class MainWindow:
         w = width or max(86, text_width(text, font) + 40)
         return LiquidButton(parent, text=text, command=cmd, width=w, height=36, bg=self._bg_of(parent),
                             fill=ACC if primary else None, border=None if primary else LINE,
-                            fg="white" if primary else TXT, fg_active=TXT, font=font, radius=12, hover=0.85)
+                            fg="white" if primary else TXT, fg_active=TXT, font=font, radius=12, hover=0.5)
 
     # ------------------------------------------------------------ Anzeigen
     def show(self, page=None):
@@ -508,9 +508,9 @@ class MainWindow:
         for text, cmd in (("✕", delete), ("Kopieren", copy)):
             LiquidButton(top, text=text, command=cmd, width=34 if text == "✕" else 78, height=28, bg=CARD,
                          border=None if text == "✕" else LINE, fg=MUT if text == "✕" else TXT, fg_active=TXT,
-                         font=("Segoe UI", 12), radius=9, hover=0.85).pack(side="right", padx=(6, 0))
+                         font=("Segoe UI", 12), radius=9, hover=0.5).pack(side="right", padx=(6, 0))
         raw_btn = LiquidButton(top, text="Original", command=toggle, width=74, height=28, bg=CARD, fg=MUT,
-                               fg_active=TXT, font=("Segoe UI", 12), radius=9, hover=0.85)
+                               fg_active=TXT, font=("Segoe UI", 12), radius=9, hover=0.5)
         raw_btn.pack(side="right")
         tw.pack(fill="x", padx=16, pady=(8, 14))
         fill()
@@ -800,7 +800,7 @@ class MainWindow:
                      wraplength=180, justify="left").pack(side="left")
         self.hk_btn = LiquidButton(hk_row, textvariable=self.hk_var, command=self._capture, width=230, height=36,
                                    bg=CARD, fill=BG, border=LINE, fg=TXT, fg_active=TXT, font=("Segoe UI", 13),
-                                   radius=10, hover=0.85)
+                                   radius=10, hover=0.5)
         self.hk_btn.pack(side="left")
         self._btn(hk_row, "Copilot-Taste", self._copilot, primary=False, width=120).pack(side="left", padx=8)
         ctk.CTkLabel(card, text="Eine einzelne Taste (z. B. Enter, F9, M) oder eine Kombination (z. B. Strg + Alt + Leertaste): "

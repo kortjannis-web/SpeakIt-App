@@ -13,8 +13,8 @@ ORANGE, ORANGE_BACK, HIGHLIGHT = "#f59e0b", "#fbbf24", "#fde68a"
 
 class LiquidButton(tk.Canvas):
     def __init__(self, parent, text="", command=None, width=110, height=36, bg="#FFFFFF", fill=None, border=None,
-                 fg="#1D1C1A", fg_active="#1D1C1A", font=("Segoe UI", 13), radius=12, hover=0.85,
-                 selected_level=0.93, anchor="center", padx=14, textvariable=None):
+                 fg="#1D1C1A", fg_active="#1D1C1A", font=("Segoe UI", 13), radius=12, hover=0.5,
+                 selected_level=0.75, anchor="center", padx=14, textvariable=None):
         self.k = dpi_scale()
         k = self.k
         super().__init__(parent, width=int(width * k), height=int(height * k), bg=bg, highlightthickness=0, bd=0,
@@ -221,7 +221,7 @@ class LiquidButton(tk.Canvas):
                                   smooth=True)
         if self.border:
             c.create_polygon(pts, smooth=True, fill="", outline=self.border)
-        col = self.fg_active if self.lv > 0.5 else self.fg
+        col = self.fg_active if self.lv > 0.4 else self.fg
         if self.anchor_mode == "w":
             c.create_text(self.padx * k, h / 2, text=self.text, fill=col, anchor="w", font=self.font)
         else:
