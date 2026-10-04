@@ -1,4 +1,5 @@
 """Globale Taste/Kombi. Die Ausloeser-Taste wird geschluckt, Modifier laufen durch."""
+import ctypes
 import logging
 import threading
 import time
@@ -14,13 +15,47 @@ MOD_GROUPS = {
 ALIAS = {n: g for g, names in MOD_GROUPS.items() for n in names}
 
 
-def normalize(name: str) -> str:
-    name = (name or "").lower()
-    return ALIAS.get(name, name)
+VKS = {
+    "ctrl": (0xA2, 0xA3), "alt": (0xA4, 0xA5), "shift": (0xA0, 0xA1), "windows": (0x5B, 0x5C),
+}
+
+
+def _vk_scans(group):
+    """Scancodes über die Windows-API (sprachunabhängig), mit und ohne Extended-Präfix."""
+    out = set()
+    for vk in VKS[group]:
+        sc = ctypes.windll.user32.MapVirtualKeyW(vk, 0)
+        if sc:
+            out |= {sc, 0xE000 | sc}
+    return out
 
 
 def _scans(name):
+    """Scancodes einer Taste. Modifier-Gruppen enthalten links und rechts."""
+    if name in MOD_GROUPS:
+        out = _vk_scans(name)
+        for n in MOD_GROUPS[name]:
+            try:
+                out |= set(keyboard.key_to_scan_codes(n))
+            except ValueError:
+                pass
+        return frozenset(out)
     return frozenset(keyboard.key_to_scan_codes(name))
+
+
+def normalize(name: str) -> str:
+    """Tastennamen sind je nach Windows-Sprache lokalisiert (umschalt, strg, linke windows)."""
+    name = (name or "").lower()
+    if name in ALIAS:
+        return ALIAS[name]
+    try:
+        sc = _scans(name)
+    except ValueError:
+        return name
+    for g in MOD_GROUPS:
+        if sc & _scans(g):
+            return g
+    return name
 
 
 ALL_MOD_SCANS = frozenset().union(*(_scans(g) for g in MOD_GROUPS))
@@ -185,4 +220,6 @@ class HotkeyManager:
 
 
 def pretty(names):
-    return " + ".join(n.capitalize() if len(n) > 1 else n.upper() for n in names)
+    return " + ".join(
+        n.capitalize() if len(n) > 1 else n.upper() for n in (normalize(x) for x in names)
+    )

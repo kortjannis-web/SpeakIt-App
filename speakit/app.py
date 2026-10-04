@@ -11,7 +11,7 @@ from PIL import Image, ImageDraw
 from . import sounds
 from .audio import Recorder, has_speech, to_wav
 from .cleanup import clean
-from .config import CONTEXTS_PATH, FAILED_DIR, LOG_PATH, Config, load_env
+from .config import FAILED_DIR, LOG_PATH, Config, load_env
 from .storage import Contexts, History, apply_replacements, llm_cost, stt_cost
 from .hotkey import HotkeyManager, pretty
 from .paste import active_window_title, paste_text
@@ -56,7 +56,7 @@ class App:
         self.tray = None
 
     # ---- Start ----
-    def run(self):
+    def run(self, background=False):
         try:
             self.hk.set_hotkey(self.cfg["hotkey"])
         except ValueError:
@@ -66,9 +66,11 @@ class App:
         self.hk.start()
         self._start_tray()
         threading.Thread(target=self._watchdog, daemon=True).start()
-        missing = [k for k in ("GROQ_API_KEY",) if not os.environ.get(k)]
-        if missing and self.cfg["stt_provider"] == "groq":
-            self.ui.open_settings()
+        no_key = self.cfg["stt_provider"] == "groq" and not os.environ.get("GROQ_API_KEY")
+        if no_key:
+            self.ui.open_window("Einstellungen")
+        elif not background:
+            self.ui.open_window("Verlauf")
         logging.info("SpeakIt läuft, Taste: %s", pretty(self.cfg["hotkey"]))
         self.ui.run()
 
@@ -90,9 +92,10 @@ class App:
                 "Textnachbearbeitung", self._toggle_cleanup,
                 checked=lambda _i: self.cfg["cleanup"],
             ),
-            pystray.MenuItem("Einstellungen …", lambda: self.ui.open_settings(), default=True),
+            pystray.MenuItem("SpeakIt öffnen", lambda: self.ui.open_window("Verlauf"), default=True),
+            pystray.MenuItem("Einstellungen …", lambda: self.ui.open_settings()),
             pystray.MenuItem("Letzten Text kopieren", self._copy_last),
-            pystray.MenuItem("Begriffsliste öffnen", lambda: os.startfile(CONTEXTS_PATH)),
+            pystray.MenuItem("Kontexte bearbeiten", lambda: self.ui.open_window("Kontexte")),
             pystray.MenuItem("Log öffnen", lambda: os.startfile(LOG_PATH)),
             pystray.MenuItem("Beenden", self._quit),
         )
@@ -113,6 +116,10 @@ class App:
     def _copy_last(self):
         if self.last_text:
             pyperclip.copy(self.last_text)
+
+    def uninstall(self):
+        from . import installer
+        installer.uninstall(self)
 
     def _quit(self):
         self.hk.stop()

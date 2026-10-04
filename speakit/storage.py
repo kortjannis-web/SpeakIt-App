@@ -72,6 +72,59 @@ DEFAULT_CONTEXTS = [
         ),
         "repl": [["Herosection", "Hero Section"], ["Hero Sektion", "Hero Section"]],
     },
+    {
+        "id": "seogeo", "name": "SEO & GEO", "active": True,
+        "terms": _split(
+            "SEO, GEO, Generative Engine Optimization, Answer Engine Optimization, KI-Sichtbarkeit, "
+            "AI Overviews, Perplexity, ChatGPT, Gemini, llms.txt, robots.txt, GPTBot, ClaudeBot, Crawler, "
+            "Indexierung, Sitemap, Canonical, noindex, Backlink, Linkbuilding, Citation, NAP, "
+            "Google Unternehmensprofil, Google Business Profile, Local SEO, Keyword, Suchintention, "
+            "Long-Tail-Keyword, Meta-Title, Meta-Description, Title-Tag, Überschriftenstruktur, "
+            "interne Verlinkung, Ankertext, Domain Authority, Core Web Vitals, LCP, CLS, INP, PageSpeed, "
+            "Schema Markup, JSON-LD, FAQ-Schema, LocalBusiness, Entität, E-E-A-T, Search Console, "
+            "Google Analytics, GA4, Clarity, Ahrefs, Semrush, Sistrix, SERP, Featured Snippet, Zero-Click, "
+            "Ranking, Impressionen, Klickrate, CTR, Absprungrate, Content-Cluster, Pillar Page, "
+            "Duplicate Content, Redirect, hreflang, Alt-Text, Rich Snippet, Zitierfähigkeit, Prompt-Set, "
+            "Localo, Ortsseite, Antwortabsatz, Offpage, Onpage"
+        ),
+        "repl": [["Seo", "SEO"], ["Lokalo", "Localo"], ["Search Konsole", "Search Console"]],
+    },
+    {
+        "id": "business", "name": "Business & Marketing", "active": True,
+        "terms": _split(
+            "Lead, Leadgenerierung, Funnel, Conversion, Conversion-Rate, Landingpage, Angebot, Retainer, "
+            "Briefing, Relaunch, Onepager, CRM, Freshsales, Stripe, Calendly, Rechnung, Akquise, "
+            "Kaltakquise, Newsletter, Klaviyo, HubSpot, Zielgruppe, Positionierung, USP, Customer Journey, "
+            "ROI, KPI, Performance Marketing, Google Ads, Meta Ads, Retargeting, Social Media, "
+            "Content Marketing, Testimonial, Social Proof, Case Study, Onboarding, Workflow, Pipeline, "
+            "Upsell, Kundenstamm, Bestandskunde, Neukunde, Makler, Handwerker, Solaranlage, Praxis, "
+            "Online-Marketing, Webdesign, Kundenwebsite, Go-live, Testdomain"
+        ),
+        "repl": [],
+    },
+    {
+        "id": "ki", "name": "KI, Claude & Cloud", "active": True,
+        "terms": _split(
+            "KI, Künstliche Intelligenz, LLM, Sprachmodell, Claude, Claude Code, Claude Opus, Claude Sonnet, "
+            "Claude Haiku, Anthropic, OpenAI, ChatGPT, GPT, Gemini, Grok, Llama, Mistral, DeepSeek, Perplexity, "
+            "Copilot, Cursor, MCP, Model Context Protocol, Agent, Subagent, Prompt, Prompt Engineering, "
+            "Kontextfenster, Token, Embedding, RAG, Fine-Tuning, Halluzination, Skill, Hook, Plugin, Workflow, "
+            "API, API-Key, Whisper, Groq, Nano Banana, fal.ai, Midjourney, Stable Diffusion, Sora, Veo, "
+            "ElevenLabs, n8n, Zapier, Make, Hugging Face, Cloud, AWS, Azure, Google Cloud, Cloudflare, Docker, "
+            "Kubernetes, Coolify, Hetzner, Vercel, Supabase, Firebase, Astro, Astra DB, GitHub, VS Code, "
+            "PowerShell, Python, Node.js, npm, Terminal, Repository, Branch, Commit, Deployment, Server, VPS, "
+            "Transformer, Neuronales Netz, Machine Learning, Deep Learning, Training, Inferenz, Parameter, "
+            "Multimodal, Reasoning, Agentic, Tool Use, Function Calling, Context Engineering, System Prompt, "
+            "Temperature, Open Source, Open Weights, Benchmark, Alignment, AGI, Diffusion, Text-to-Speech, "
+            "Speech-to-Text, Vektordatenbank, Pinecone, LangChain, LlamaIndex, Ollama, LM Studio, Windsurf, "
+            "Codex, Devin, Lovable, Bolt, Replit, Manus, NotebookLM, Flux, Runway, Kling, Suno, Wispr Flow, "
+            "Kaggle, Nvidia, CUDA, GPU, Prompt Caching, Batch API, Rate Limit, Webhook, Endpoint, JSON, SDK, "
+            "CLI, Slash-Command, Statusline, CLAUDE.md, Artifact, Workbench, Agent SDK, Extended Thinking, "
+            "Computer Use, Vibe Coding, Hugging Face, Replicate, OpenRouter, Mixture of Experts, Quantisierung"
+        ),
+        "repl": [["Cloud Code", "Claude Code"], ["Claud Code", "Claude Code"], ["Clawd", "Claude"],
+                 ["Cloud Opus", "Claude Opus"], ["Cloud Sonnet", "Claude Sonnet"], ["Cloud Haiku", "Claude Haiku"]],
+    },
 ]
 
 
@@ -83,22 +136,30 @@ class Contexts:
 
     def load(self):
         with self.lock:
-            data = None
+            data, seen = None, None
             if CONTEXTS_PATH.exists():
                 try:
-                    data = json.loads(CONTEXTS_PATH.read_text(encoding="utf-8"))["contexts"]
+                    raw = json.loads(CONTEXTS_PATH.read_text(encoding="utf-8"))
+                    data, seen = raw["contexts"], raw.get("seen")
                 except Exception:
                     data = None
-            self.items = data or json.loads(json.dumps(DEFAULT_CONTEXTS))
+            self.items = data or []
+            # Seit der ersten Version vorhandene Standard-Kontexte gelten als bekannt
+            self.seen = set(seen if seen is not None else [c["id"] for c in self.items])
+            # Neue Standard-Kontexte nachziehen, aber nie wieder, was du gelöscht hast
+            for d in DEFAULT_CONTEXTS:
+                if d["id"] not in self.seen and not any(c["id"] == d["id"] for c in self.items):
+                    self.items.append(json.loads(json.dumps(d)))
+                self.seen.add(d["id"])
             if not any(c["id"] == "general" for c in self.items):
                 self.items.insert(0, json.loads(json.dumps(DEFAULT_CONTEXTS[0])))
-            if not CONTEXTS_PATH.exists():
-                self.save()
+            self.save()
 
     def save(self):
         with self.lock:
             CONTEXTS_PATH.write_text(
-                json.dumps({"contexts": self.items}, indent=2, ensure_ascii=False), encoding="utf-8"
+                json.dumps({"contexts": self.items, "seen": sorted(self.seen)}, indent=2, ensure_ascii=False),
+                encoding="utf-8",
             )
 
     def get(self, cid):
@@ -142,6 +203,14 @@ class Contexts:
                 c["repl"] = [r for r in c["repl"] if r[0].lower() != wrong.lower()] + [[wrong, right]]
             if right and right not in c["terms"]:
                 c["terms"].append(right)
+            self.save()
+
+    def add_term(self, cid, term: str):
+        with self.lock:
+            c = self.get(cid) or self.get("general")
+            term = term.strip()
+            if term and term not in c["terms"]:
+                c["terms"].append(term)
             self.save()
 
     # ---- Auswahl für die APIs ----
@@ -210,6 +279,10 @@ class History:
             ).fetchall()
         keys = ("id", "ts", "raw", "text", "audio_s", "tok_in", "tok_out", "cost")
         return [dict(zip(keys, r)) for r in rows]
+
+    def update_text(self, did, text):
+        with self.lock, self._db() as db:
+            db.execute("UPDATE dictations SET text=? WHERE id=?", (text, did))
 
     def delete(self, did):
         with self.lock, self._db() as db:

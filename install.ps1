@@ -23,7 +23,7 @@ Unregister-ScheduledTask -TaskName "SpeakIt" -Confirm:$false -ErrorAction Silent
 if ($Admin) {
     $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
     if (-not $isAdmin) { throw "Fuer -Admin dieses Skript in einer Administrator-PowerShell starten." }
-    $action = New-ScheduledTaskAction -Execute $pyw -Argument "-m speakit" -WorkingDirectory $PSScriptRoot
+    $action = New-ScheduledTaskAction -Execute $pyw -Argument "-m speakit --background" -WorkingDirectory $PSScriptRoot
     $trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
     $principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -RunLevel Highest -LogonType Interactive
     $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit ([TimeSpan]::Zero)
@@ -33,11 +33,11 @@ if ($Admin) {
 } else {
     $s = (New-Object -ComObject WScript.Shell).CreateShortcut($lnk)
     $s.TargetPath = $pyw
-    $s.Arguments = "-m speakit"
+    $s.Arguments = "-m speakit --background"
     $s.WorkingDirectory = $PSScriptRoot
     $s.WindowStyle = 7
     $s.Save()
     Write-Host "Autostart eingerichtet (Startup-Ordner)."
-    if (-not $NoStart) { Start-Process $pyw -ArgumentList "-m speakit" -WorkingDirectory $PSScriptRoot }
+    if (-not $NoStart) { Start-Process $pyw -ArgumentList "-m speakit --background" -WorkingDirectory $PSScriptRoot }
 }
 Write-Host "Fertig. SpeakIt laeuft im Tray (Mikrofon-Symbol). Beim ersten Start oeffnen sich die Einstellungen."

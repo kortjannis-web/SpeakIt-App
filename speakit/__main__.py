@@ -11,7 +11,7 @@ def main():
     if ctypes.windll.kernel32.GetLastError() == 183:
         sys.exit(0)
     from .app import App
-    App().run()
+    App().run(background="--background" in sys.argv)
 
 
 if __name__ == "__main__":

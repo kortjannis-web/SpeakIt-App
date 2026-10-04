@@ -7,7 +7,7 @@ KEY = "#ff00ff"  # transparente Farbe
 BG = "#17171a"
 OUTLINE = "#b4b9c2"  # dünne, hellgraue Kontur
 RED, GREEN, AMBER, FG, MUTED = "#ef4444", "#22c55e", "#f59e0b", "#f4f4f5", "#9ca3af"
-BASE_W, BASE_H = 176, 32
+BASE_W, BASE_H = 156, 32
 BARS = 12
 
 
@@ -73,12 +73,19 @@ class Overlay:
         self._draw()
 
     def _pill(self):
+        """Volle Kapsel: Füllung aus zwei Halbkreisen + Rechteck, Kontur aus Bögen + Linien."""
         c, k = self.cv, self.k
+        lw = max(1, round(k * 0.8))
         x1, y1, x2, y2 = 1, 1, self.W - 1, self.H - 1
-        r = (y2 - y1) / 2
-        pts = [x1 + r, y1, x2 - r, y1, x2, y1, x2, y1 + r, x2, y2 - r, x2, y2, x2 - r, y2,
-               x1 + r, y2, x1, y2, x1, y2 - r, x1, y1 + r, x1, y1]
-        c.create_polygon(pts, smooth=True, fill=BG, outline=OUTLINE, width=max(1, round(k * 0.8)))
+        d = y2 - y1
+        r = d / 2
+        c.create_oval(x1, y1, x1 + d, y2, fill=BG, outline=BG)
+        c.create_oval(x2 - d, y1, x2, y2, fill=BG, outline=BG)
+        c.create_rectangle(x1 + r, y1, x2 - r, y2, fill=BG, outline=BG)
+        c.create_arc(x1, y1, x1 + d, y2, start=90, extent=180, style="arc", outline=OUTLINE, width=lw)
+        c.create_arc(x2 - d, y1, x2, y2, start=270, extent=180, style="arc", outline=OUTLINE, width=lw)
+        c.create_line(x1 + r, y1, x2 - r, y1, fill=OUTLINE, width=lw)
+        c.create_line(x1 + r, y2, x2 - r, y2, fill=OUTLINE, width=lw)
 
     def _draw(self):
         c, k, t = self.cv, self.k, self.t
@@ -97,7 +104,7 @@ class Overlay:
                 x = (32 + i * 6) * k
                 c.create_rectangle(x, cy - h / 2, x + 3 * k, cy + h / 2, fill=FG, outline=FG)
             c.create_text(
-                self.W - 14 * k, cy, text=fmt_time(self.rec.seconds), fill=FG, anchor="e",
+                (32 + BARS * 6 + 6) * k, cy, text=fmt_time(self.rec.seconds), fill=FG, anchor="w",
                 font=("Segoe UI Semibold", 9),
             )
         elif self.state == "busy":

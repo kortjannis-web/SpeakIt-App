@@ -5,3 +5,4 @@ requests>=2.32
 pyperclip>=1.9
 pystray>=0.19
 Pillow>=11
+customtkinter>=5.2

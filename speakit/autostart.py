@@ -29,7 +29,7 @@ def set_enabled(on: bool):
     if on:
         _ps(
             f"$s=(New-Object -ComObject WScript.Shell).CreateShortcut('{LNK}');"
-            f"$s.TargetPath='{_pythonw()}';$s.Arguments='-m speakit';"
+            f"$s.TargetPath='{_pythonw()}';$s.Arguments='-m speakit --background';"
             f"$s.WorkingDirectory='{ROOT}';$s.WindowStyle=7;$s.Save()"
         )
     elif LNK.exists():
