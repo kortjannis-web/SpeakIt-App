@@ -21,7 +21,7 @@ DOT = "#f59e0b"  # Aufnahme-Punkt
 LIQUID, LIQUID_HI, LIQUID_BACK = "#f59e0b", "#fde68a", "#fbbf24"
 LIQUID_DONE = "#fcd27a"  # helleres Orange, sobald der Text fertig ist
 GLOW = 0.28  # Dauer des Übergangs in Sekunden
-BASE_W, BASE_H = 130, 30  # Kapselgröße im Aufnahmemodus (Basis-Einheiten, werden mit DPI skaliert)
+BASE_H = 30  # Kapselhöhe (Basis-Einheiten, wird mit DPI skaliert)
 MAX_W = 300
 BARS = 9
 COLS = 56  # Spalten der Wasseroberfläche
@@ -62,8 +62,8 @@ class Overlay:
         self.text, self.msg_col = "", GREEN
         self.e = 0.0  # Aufklapp-Grad 0..1
         self.target = 0.0
-        self.cur_w = BASE_W * k
-        self.want_w = BASE_W * k
+        self.cur_w = 0.0
+        self.want_w = 0.0
         self.close_at = 0.0
         self.last = time.monotonic()
         self.levels = collections.deque([0.0] * BARS, maxlen=BARS)
@@ -78,6 +78,7 @@ class Overlay:
         self.win = tk.Toplevel(root)
         w = self.win
         self.timer_font = tkfont.Font(root=root, family="Segoe UI Semibold", size=11)
+        self.cur_w = self.want_w = self._rec_w()  # Startbreite = Aufnahmebreite
         w.overrideredirect(True)
         w.attributes("-topmost", True)
         w.configure(bg=KEY)
@@ -104,6 +105,10 @@ class Overlay:
         self.visible = False
 
     # ------------------------------------------------------------ Steuerung
+    def _rec_w(self):
+        """Feste Kapselbreite im Aufnahmemodus: Punkt, Balken und Platz für die breiteste Anzeige (59:59)."""
+        return (27 + BARS * 4 + 3 + 9) * self.k + self.timer_font.measure("59:59")
+
     def _recording(self):
         return getattr(self.rec, "stream", None) is not None
 
@@ -112,6 +117,7 @@ class Overlay:
         self.target = 1.0
         if not self.visible:
             self.e = 0.0
+            self.cur_w = self.want_w  # frisch geöffnet: gleich in Zielbreite, kein Nachziehen
             self.win.deiconify()
             self.win.attributes("-topmost", True)
             self.visible = True
@@ -128,7 +134,7 @@ class Overlay:
         if state == "rec":
             self.dot_col = DOT
             self.levels.extend([0.0] * BARS)
-            self.want_w = BASE_W * k
+            self.want_w = self._rec_w()
             self._open("rec")
             return
         if self._recording():  # eine neue Aufnahme hat Vorrang
@@ -138,7 +144,7 @@ class Overlay:
                 self.glow_t = 0.0
                 self._reset_liquid()
                 self.busy_t = 0.0
-                self.want_w = BASE_W * k
+                self.want_w = self._rec_w()
             try:
                 self.tau = max(0.8, float(text) / 2)
             except ValueError:
@@ -335,7 +341,7 @@ class Overlay:
             txt = fmt_time(self.rec.seconds)
             c.create_text(left + (27 + BARS * 4 + 3) * k, cy, text=txt, fill=FG, anchor="w", font=self.timer_font)
             # Feste Breite für die breiteste Anzeige (59:59), damit die Kapsel beim Zählen nicht wackelt
-            self.want_w = (27 + BARS * 4 + 3 + 9) * k + self.timer_font.measure("59:59")
+            self.want_w = self._rec_w()
         elif self.mode == "msg":
             rr = 4 * k
             dx = left + 15 * k
