@@ -1,11 +1,11 @@
 # SpeakIt installieren: venv, Pakete, Autostart. Optional -Admin (laeuft dann auch ueber Admin-Fenstern).
-param([switch]$Admin, [switch]$NoStart)
+param([switch]$Admin, [switch]$NoStart, [switch]$NoShortcuts)
 $ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot
 
 if (-not (Test-Path ".venv\Scripts\pythonw.exe")) {
     Write-Host "Erstelle virtuelle Umgebung ..."
-    python -m venv .venv
+    if (Get-Command py -ErrorAction SilentlyContinue) { py -3 -m venv .venv } else { python -m venv .venv }
 }
 Write-Host "Installiere Pakete ..."
 & .venv\Scripts\python.exe -m pip install --quiet --upgrade pip
@@ -15,6 +15,16 @@ if (-not (Test-Path ".env")) { Copy-Item ".env.example" ".env" }
 
 $pyw = (Resolve-Path ".venv\Scripts\pythonw.exe").Path
 $lnk = Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\Startup\SpeakIt.lnk"
+
+if ($NoShortcuts) { Write-Host "Fertig (ohne Verknuepfungen)."; return }
+
+# Startmenue-Eintrag, damit SpeakIt ueber die Windows-Suche startet
+$menu = Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\SpeakIt.lnk"
+$m = (New-Object -ComObject WScript.Shell).CreateShortcut($menu)
+$m.TargetPath = $pyw
+$m.Arguments = "-m speakit"
+$m.WorkingDirectory = $PSScriptRoot
+$m.Save()
 
 # alte Autostarts entfernen
 if (Test-Path $lnk) { Remove-Item $lnk }
