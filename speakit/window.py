@@ -32,7 +32,7 @@ PAGES = ["Verlauf", "Kontexte", "Statistik", "Einstellungen"]
 DAYS = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"]
 
 
-def style_titlebar(win, color="#f7b24d", text="#1D1C1A"):
+def style_titlebar(win, color="#fde8c4", text="#1D1C1A"):
     """Windows 11: Titelleiste und Rand dezent orange (auf Windows 10 wirkungslos, stört nicht)."""
     try:
         win.update_idletasks()
