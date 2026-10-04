@@ -13,7 +13,10 @@ if "--selftest" in sys.argv:
         sd.query_devices()
         import speakit.app  # noqa: F401
         import speakit.window  # noqa: F401
-        open(out, "w").write("OK")
+        from speakit.config import load_env
+        load_env()
+        keys = [k for k in ("GROQ_API_KEY", "ANTHROPIC_API_KEY") if os.environ.get(k)]
+        open(out, "w").write("OK keys=" + ",".join(keys))
     except Exception as e:  # noqa: BLE001
         open(out, "w").write("FEHLER: " + repr(e))
         sys.exit(1)
