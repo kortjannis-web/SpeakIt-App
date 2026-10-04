@@ -56,7 +56,7 @@ Ohne Anthropic-Key funktioniert SpeakIt weiter, nur ohne Glättung und Kontextko
 ```
 powershell -ExecutionPolicy Bypass -File build.ps1
 ```
-Ergebnis: `dist\SpeakIt.exe`. Beim ersten Öffnen installiert sich die Datei selbst (nach `%LOCALAPPDATA%\Programs\SpeakIt`), legt Autostart und Startmenü-Eintrag an und startet. Daten liegen in `%APPDATA%\SpeakIt`.
+Ergebnis: `dist\SpeakIt-ohne-Keys.exe` (oder `-mit-Keys`). Beim ersten Öffnen installiert sich die Datei selbst (nach `%LOCALAPPDATA%\Programs\SpeakIt`), legt Autostart und Startmenü-Eintrag an und startet. Daten liegen in `%APPDATA%\SpeakIt`.
 
 **Mit eingebauten Keys** (Empfänger muss nichts eintragen):
 ```
