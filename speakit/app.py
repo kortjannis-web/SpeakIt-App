@@ -71,6 +71,7 @@ class App:
         self._start_tray()
         threading.Thread(target=self._watchdog, daemon=True).start()
         updater.start_background(on_ready=self.refresh_tray)
+        updater.start_source_updates(on_ready=self.refresh_tray)
         no_key = self.cfg["stt_provider"] == "groq" and not os.environ.get("GROQ_API_KEY")
         if no_key:
             self.ui.open_window("Einstellungen")
@@ -107,6 +108,8 @@ class App:
             pystray.MenuItem("Kontexte bearbeiten", lambda: self.ui.open_window("Kontexte")),
             pystray.MenuItem("Update installieren (Neustart)", lambda: updater.restart_now(self._quit),
                              visible=lambda _i: updater.pending()),
+            pystray.MenuItem("Update aktivieren (Neustart)", lambda: updater.restart_source(self._quit),
+                             visible=lambda _i: updater._source_ready),
             pystray.MenuItem("Log öffnen", lambda: os.startfile(LOG_PATH)),
             pystray.MenuItem("Beenden", self._quit),
         )

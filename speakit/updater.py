@@ -15,7 +15,7 @@ from pathlib import Path
 import requests
 
 from . import autostart
-from .config import FROZEN
+from .config import FROZEN, ROOT
 from .version import VERSION
 
 REPO = "kortjannis-web/SpeakIt-App"
@@ -119,4 +119,57 @@ def restart_now(quit_fn):
     """Beenden und nach kurzer Pause neu starten, beim Start wird das Update eingesetzt."""
     exe = str(autostart.INSTALLED_EXE)
     subprocess.Popen(f'cmd /c ping 127.0.0.1 -n 3 >nul & start "" "{exe}"', shell=True, creationflags=0x08000000)
+    quit_fn()
+
+
+# ---------------------------------------------------------------- Quellcode-Installation (ohne EXE)
+def _git(*args):
+    return subprocess.run(["git", "-C", str(ROOT), *args], capture_output=True, text=True, timeout=120,
+                          creationflags=0x08000000)
+
+
+def pull_once() -> bool:
+    """Neuen Stand von GitHub holen (nur Vorspulen, lokale Änderungen bleiben unberührt). True = es gab Neues."""
+    before = _git("rev-parse", "HEAD").stdout.strip()
+    r = _git("pull", "--ff-only", "--quiet")
+    after = _git("rev-parse", "HEAD").stdout.strip()
+    if r.returncode != 0 or before == after:
+        return False
+    changed = _git("diff", "--name-only", before, after).stdout.split()
+    if "requirements.txt" in changed:
+        subprocess.run([sys.executable, "-m", "pip", "install", "--quiet", "-r", str(ROOT / "requirements.txt")],
+                       timeout=600, creationflags=0x08000000)
+    logging.info("Update geholt (%s -> %s), aktiv beim nächsten Start", before[:7], after[:7])
+    return True
+
+
+def start_source_updates(on_ready=None):
+    if FROZEN or os.environ.get("SPEAKIT_NO_UPDATE") or not (ROOT / ".git").exists():
+        return
+
+    def loop():
+        time.sleep(15)
+        while True:
+            try:
+                if pull_once():
+                    global _source_ready
+                    _source_ready = True
+                    if on_ready:
+                        on_ready()
+            except Exception as e:
+                logging.info("Update-Prüfung fehlgeschlagen: %s", e)
+            time.sleep(EVERY)
+
+    threading.Thread(target=loop, daemon=True).start()
+
+
+_source_ready = False
+
+
+def restart_source(quit_fn):
+    """Quellcode-Version neu starten, damit der geholte Stand aktiv wird."""
+    pyw = Path(sys.executable).with_name("pythonw.exe")
+    exe = pyw if pyw.exists() else Path(sys.executable)
+    subprocess.Popen(f'cmd /c ping 127.0.0.1 -n 3 >nul & start "" "{exe}" -m speakit', shell=True, cwd=str(ROOT),
+                     creationflags=0x08000000)
     quit_fn()
