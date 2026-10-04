@@ -64,3 +64,10 @@ class StatsReset(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_preclean():
+    from speakit.precleanup import preclean
+    assert preclean("ähm, also ich ich wollte, äh, sagen .") == "Also ich wollte sagen."
+    assert preclean("Leute, die die Regeln kennen") == "Leute, die die Regeln kennen"
+    assert preclean("Ich habe 3,5 Euro. äh ja") == "Ich habe 3,5 Euro. Ja"

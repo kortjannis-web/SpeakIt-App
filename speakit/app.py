@@ -10,6 +10,7 @@ import pystray
 from . import sounds
 from .audio import Recorder, has_speech, to_wav
 from .cleanup import clean
+from .precleanup import preclean
 from .config import FAILED_DIR, LOG_PATH, Config, load_env
 from .storage import Contexts, History, apply_replacements, llm_cost, stt_cost
 from .hotkey import HotkeyManager, pretty
@@ -234,10 +235,10 @@ class App:
             if not raw or raw.lower().strip(" .!?") in HALLUCINATIONS and secs < 4:
                 self.ui.set_state("done", "Nichts erkannt", 1200)
                 return
-            text, t_in, t_out = raw, 0, 0
+            text, t_in, t_out = preclean(raw), 0, 0  # kostenlos, immer
             if self.cfg["cleanup"]:
                 text, t_in, t_out = clean(
-                    raw, self.cfg["cleanup_model"], self.contexts.llm_context(), title
+                    text, self.cfg["cleanup_model"], self.contexts.llm_context(), title
                 )
             text = apply_replacements(text, self.contexts.active_repl())
             self.last_text = text

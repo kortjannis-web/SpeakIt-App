@@ -20,6 +20,7 @@ Regeln:
 - Passe den Ton leicht an die aktive App an (Chat locker, E-Mail sachlich), verfälsche aber nie den Inhalt."""
 
 NL = "\n\n"
+MIN_WORDS = 6  # kürzere Diktate lohnen Haiku nicht, dort reicht die lokale Vorreinigung
 
 
 def _system(ctx: dict, app_title: str) -> str:
@@ -46,7 +47,7 @@ def _system(ctx: dict, app_title: str) -> str:
 def clean(raw: str, model: str, ctx: dict, app_title: str):
     """Gibt (text, tokens_in, tokens_out) zurück. Bei Fehlern der Rohtext."""
     key = os.environ.get("ANTHROPIC_API_KEY", "")
-    if not key or len(raw.split()) < 3:
+    if not key or len(raw.split()) < MIN_WORDS:
         return raw, 0, 0
     try:
         r = requests.post(
