@@ -53,4 +53,4 @@ class UI:
         except queue.Empty:
             pass
         self.overlay.tick()
-        self.root.after(33, self._loop)
+        self.root.after(16, self._loop)
