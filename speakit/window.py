@@ -69,6 +69,8 @@ class MainWindow:
         self.last_ctx = "general"
         self.tut = None
         self.hist_limit = 30
+        self.dirty = set(PAGES)  # Seiten, deren Inhalt neu aufgebaut werden muss
+        self._day = datetime.date.today()
 
     # ------------------------------------------------------------ Aufbau
     def build(self):
@@ -200,12 +202,16 @@ class MainWindow:
             f.pack_forget()
             self.nav[n].set_selected(n == name)
         self.pages[name].pack(fill="both", expand=True)
-        if name == "Verlauf":
-            self.refresh_history()
-        elif name == "Kontexte":
-            self.refresh_contexts()
-        elif name == "Statistik":
-            self.refresh_stats()
+        if datetime.date.today() != self._day:  # nach Mitternacht stimmen "Heute" und "Gestern" nicht mehr
+            self._day = datetime.date.today()
+            self.dirty.update(("Verlauf", "Statistik"))
+        if name in self.dirty:  # nur neu aufbauen, wenn sich seit dem letzten Anzeigen etwas geändert hat
+            if name == "Verlauf":
+                self.refresh_history()
+            elif name == "Kontexte":
+                self.refresh_contexts()
+            elif name == "Statistik":
+                self.refresh_stats()
         self.side_info.configure(text=f"Taste: {pretty(self.app.cfg['hotkey'])}")
         self.refresh_mini()
 
@@ -431,6 +437,7 @@ class MainWindow:
             self.mini_rows[key].configure(text=f"{money} $  ·  {words} Wörter")
 
     def on_new_dictation(self):
+        self.dirty.update(("Verlauf", "Statistik"))
         self.refresh_mini()
         if self.visible and self.page == "Verlauf":
             self.refresh_history()
@@ -446,6 +453,7 @@ class MainWindow:
         self.hist.pack(fill="both", expand=True, padx=22, pady=(0, 8))
 
     def refresh_history(self):
+        self.dirty.discard("Verlauf")
         for w in self.hist.winfo_children():
             w.destroy()
         rows = self.app.history.recent(self.hist_limit)
@@ -615,6 +623,7 @@ class MainWindow:
             else:
                 self.app.contexts.add_term(cid, right)
             dlg.destroy()
+            self.dirty.add("Kontexte")
             self.refresh_history()
 
         row = ctk.CTkFrame(dlg, fg_color="transparent")
@@ -661,6 +670,7 @@ class MainWindow:
         self.ctx_msg.pack(side="left", padx=8)
 
     def refresh_contexts(self):
+        self.dirty.discard("Kontexte")
         for w in self.ctx_list.winfo_children():
             w.destroy()
         for c in self.app.contexts.items:
@@ -740,6 +750,7 @@ class MainWindow:
         self.stat_box.pack(fill="x", padx=22)
 
     def refresh_stats(self):
+        self.dirty.discard("Statistik")
         for w in self.stat_box.winfo_children():
             w.destroy()
         starts = period_starts()
@@ -923,3 +934,4 @@ class MainWindow:
             self.set_msg.configure(text="Taste unbekannt", text_color=RED)
         self.app.refresh_tray()
         self.side_info.configure(text=f"Taste: {pretty(cfg['hotkey'])}")
+        self.dirty.update(("Verlauf", "Kontexte", "Statistik"))
