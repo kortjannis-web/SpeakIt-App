@@ -11,7 +11,7 @@ if (-not (Test-Path $py)) { throw "Zuerst install.ps1 ausfuehren." }
 & $py make_icon.py
 
 # Gleiche Version wie das neueste Release, damit sich diese EXE beim nächsten Release selbst aktualisiert
-$version = "speakitersion.py"
+$version = "speakit\version.py"
 $versionOld = Get-Content $version -Raw
 try {
     $tag = (Invoke-RestMethod "https://api.github.com/repos/kortjannis-web/SpeakIt-App/releases/latest").tag_name
