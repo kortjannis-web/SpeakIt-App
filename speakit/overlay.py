@@ -128,8 +128,8 @@ class Overlay:
             if not self._recording():
                 self.mode, self.target = None, 0.0
             return
-        if state == "rec_clean":  # Feinschliff aktiv: Punkt wird rot
-            self.dot_col = RED
+        if state == "dot":  # Stufe gewechselt: rot = Feinschliff, violett = Struktur, blau = Umschreiben
+            self.dot_col = text or DOT
             return
         if state == "rec":
             self.dot_col = DOT

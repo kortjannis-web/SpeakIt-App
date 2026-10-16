@@ -67,6 +67,7 @@ class HotkeyManager:
         self.on_release = on_release
         self.on_cancel = on_cancel
         self.cancel_armed = lambda: False
+        self.paused = lambda: False  # z. B. zweite Taste ruhen lassen, während die erste eine Taste aufnimmt
         self.injecting = False
         self.enabled = True
         self.names = []
@@ -137,7 +138,7 @@ class HotkeyManager:
             return True
 
     def _process(self, e):
-        if self.injecting:
+        if self.injecting or self.paused():
             return True
         sc, is_down = e.scan_code, e.event_type == "down"
         if self.capture:

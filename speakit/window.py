@@ -3,7 +3,9 @@ import ctypes
 import datetime
 import math
 import os
+import threading
 import tkinter as tk
+from tkinter import filedialog
 
 import customtkinter as ctk
 
@@ -15,7 +17,8 @@ from .icon import drop_icon
 from .liquid import LiquidButton, text_width
 from .overlay import dpi_scale
 from .version import VERSION
-from .storage import WAIT, _split, cleanup_comparison, period_starts
+from .storage import WAIT, _split, cleanup_comparison, export_markdown, llm_cost, mode_label, period_starts
+from .precleanup import preclean
 
 BG, SIDE, CARD, LINE = "#F4F1EA", "#ECE8DF", "#FFFFFF", "#E3DED2"
 TXT, MUT, ACC, ACC_H, GREEN, RED = "#1D1C1A", "#7B766B", "#1D1C1A", "#3A3835", "#2E7D5B", "#C2410C"
@@ -23,6 +26,12 @@ SEL = "#DDD8CB"
 ORANGE = "#f59e0b"
 
 TRIGGERS = {"Nur per Doppeltipp": "double", "Bei jeder Aufnahme": "always"}
+PROVIDERS = {"Groq (Gratis-Kontingent)": "groq", "Claude Haiku (Anthropic)": "claude"}
+GROQ_MODELS = ["openai/gpt-oss-120b", "openai/gpt-oss-20b", "llama-3.3-70b-versatile"]
+FORMATS = {"Markdown (Notion, Slack, Claude …)": "markdown", "Klartext (Word, Outlook …)": "plain"}
+TARGETS = ["Englisch", "Deutsch", "Französisch", "Spanisch", "Italienisch", "Niederländisch", "Polnisch",
+           "Portugiesisch", "Türkisch", "Ukrainisch"]
+VIOLET, BLUE = "#8b5cf6", "#3b82f6"
 MODES = {
     "Halten oder Tippen (beides)": "both",
     "Nur halten (Push-to-talk)": "hold",
@@ -79,9 +88,9 @@ class MainWindow:
         r = self.root
         r.title("SpeakIt")
         r.configure(fg_color=BG)
-        w, h = 1000, 760
-        r.geometry(f"{w}x{h}+{(r.winfo_screenwidth() - w) // 2}+{(r.winfo_screenheight() - h) // 2}")
-        r.minsize(900, 700)
+        w, h = 1000, 820
+        r.geometry(f"{w}x{h}+{(r.winfo_screenwidth() - w) // 2}+{max(0, (r.winfo_screenheight() - h) // 2 - 20)}")
+        r.minsize(900, 760)
         r.protocol("WM_DELETE_WINDOW", self.hide)
         self.f_title = ctk.CTkFont(family="Segoe UI Semibold", size=24)
         self.f_h = ctk.CTkFont(family="Segoe UI Semibold", size=14)
@@ -112,6 +121,19 @@ class MainWindow:
                       switch_height=22, progress_color=ORANGE).pack(side="right", padx=(0, 10), pady=(10, 0))
         self.clean_hint = ctk.CTkLabel(cl, text="", font=self.f_s, text_color=MUT, justify="left", wraplength=172)
         self.clean_hint.pack(anchor="w", padx=14, pady=(2, 10))
+        self.tr_var = ctk.BooleanVar(value=bool(self.app.cfg["translate_to"]))
+        tr = ctk.CTkFrame(side, fg_color=CARD, corner_radius=14, border_width=1, border_color=LINE)
+        tr.pack(fill="x", padx=12, pady=(0, 14))
+        trt = ctk.CTkFrame(tr, fg_color="transparent")
+        trt.pack(fill="x")
+        ctk.CTkLabel(trt, text="Übersetzen", font=self.f_n, text_color=TXT).pack(side="left", padx=(14, 0), pady=(10, 0))
+        ctk.CTkSwitch(trt, text="", variable=self.tr_var, command=self._on_translate, width=44, switch_width=40,
+                      switch_height=22, progress_color=ORANGE).pack(side="right", padx=(0, 10), pady=(10, 0))
+        self.tr_lang = ctk.StringVar(value=self.app.cfg["translate_to"] or self.app.cfg.data.get("translate_last")
+                                     or "Englisch")
+        ctk.CTkOptionMenu(tr, values=TARGETS, variable=self.tr_lang, command=lambda _v: self._on_translate(), height=28,
+                          corner_radius=9, font=self.f_s, fg_color=BG, text_color=TXT, button_color=SEL,
+                          button_hover_color=LINE, dropdown_font=self.f_s, width=172).pack(padx=14, pady=(6, 10))
         self.nav = {}
         for name in PAGES:
             b = LiquidButton(side, text=name, command=lambda n=name: self.show_page(n), width=180, height=36,
@@ -228,16 +250,22 @@ class MainWindow:
         steps = [
             ("Willkommen bei SpeakIt",
              "SpeakIt schreibt, was du sagst. In jedes Textfeld, in jedem Programm: Mails, Chats, Editor, Browser. "
-             "Dieses kurze Tutorial zeigt dir in sechs Schritten, wie es geht.", self._ill_welcome),
+             "Dieses kurze Tutorial zeigt dir in sieben Schritten, wie es geht.", self._ill_welcome),
             ("Taste halten und sprechen",
              f"Halte {key} gedrückt, sprich und lass los. Der Text erscheint sofort dort, wo dein Cursor steht. "
              "Tippst du die Taste nur kurz an, läuft die Aufnahme weiter, bis du sie nochmal tippst. "
              "Mit Esc brichst du ab.", self._ill_key),
-            ("Feinschliff per Doppeltipp",
+            ("1x, 2x oder 3x tippen",
              "Einmal drücken ist schnell und kostenlos: SpeakIt entfernt selbst Füllwörter wie \"ähm\". "
-             "Drückst du die Taste zweimal schnell hintereinander, wird der Punkt rot und Claude glättet den Text "
-             "zusätzlich (Satzbau, Zeichensetzung, falsch verstandene Wörter). Das lohnt sich für Bücher und Mails. "
-             "In den Einstellungen kannst du festlegen, dass jede Aufnahme geglättet wird.", self._ill_clean),
+             "2x schnell tippen: der Punkt wird rot und die KI glättet den Text (Satzbau, Zeichensetzung, falsch "
+             "verstandene Wörter). 3x tippen: der Punkt wird violett und SpeakIt macht eine Notiz mit Kernaussage, "
+             "Stichpunkten und To-dos daraus. Standard-KI ist Groq (gratis, gleicher Key wie die Spracherkennung).",
+             self._ill_clean),
+            ("Markierten Text umschreiben",
+             f"Markiere Text, halte {pretty(self.app.cfg['rewrite_hotkey'])} und sag, was passieren soll: \"kürzer\", "
+             "\"freundlicher\", \"als Liste\", \"auf Englisch\". Der markierte Text wird ersetzt (blauer Punkt). "
+             "Mit dem Schalter \"Übersetzen\" links schreibt SpeakIt jedes Diktat direkt in einer anderen Sprache.",
+             self._ill_rewrite),
             ("Die kleine Anzeige",
              "Unten in der Mitte erscheint beim Sprechen eine kleine Kapsel mit Pegel und Sekundenticker. "
              "Danach füllt sich eine orange Anzeige. Ist sie bis oben voll, ist dein Text fertig und eingefügt.",
@@ -363,9 +391,29 @@ class MainWindow:
             c.create_text(cx * k, 112 * k, text=label, fill=MUT, font=("Segoe UI", 11))
         c.create_text(420 * k, 62 * k, text="→", fill=MUT, font=("Segoe UI", 20))
 
+    def _ill_rewrite(self, c, k):
+        c.create_rectangle(40 * k, 30 * k, 300 * k, 140 * k, fill=BG, outline=LINE)
+        for i, (w, sel) in enumerate(((210, False), (180, True), (230, True), (120, False))):
+            y = (52 + i * 22) * k
+            if sel:
+                c.create_rectangle(56 * k, y - 8 * k, (56 + w) * k, y + 8 * k, fill="#CFE0FF", outline="#CFE0FF")
+            c.create_line(60 * k, y, (52 + w) * k, y, fill=MUT, width=int(3 * k), capstyle="round")
+        c.create_text(345 * k, 85 * k, text="→", fill=TXT, font=("Segoe UI Semibold", 22))
+        x0 = 400
+        self._capsule(c, k, x0 * k, 70 * k, 138 * k, 30 * k)
+        c.create_oval((x0 + 11) * k, 81 * k, (x0 + 19) * k, 89 * k, fill=BLUE, outline=BLUE)
+        for i, hh in enumerate([4, 8, 13, 7, 15, 10, 5, 12, 8, 14]):
+            x = (x0 + 28 + i * 5) * k
+            c.create_line(x, (85 - hh / 2) * k, x, (85 + hh / 2) * k, fill="#f4f4f5", width=int(2.4 * k),
+                          capstyle="round")
+        c.create_text((x0 + 69) * k, 40 * k, text="\u201ekürzer und freundlicher\u201c", fill=TXT,
+                      font=("Segoe UI Semibold", 11))
+        c.create_text((x0 + 69) * k, 126 * k, text="ersetzt die Markierung", fill=MUT, font=("Segoe UI", 11))
+
     def _ill_clean(self, c, k):
-        for cx, col, label, sub_ in ((175, "#f59e0b", "1x drücken", "schnell, kostenlos"),
-                                     (435, "#ef4444", "2x drücken", "mit Feinschliff")):
+        for cx, col, label, sub_ in ((105, "#f59e0b", "1x drücken", "schnell, kostenlos"),
+                                     (305, "#ef4444", "2x drücken", "Feinschliff"),
+                                     (505, VIOLET, "3x drücken", "Struktur + To-dos")):
             x0 = cx - 69
             self._capsule(c, k, x0 * k, 46 * k, 138 * k, 30 * k)
             c.create_oval((x0 + 11) * k, 57 * k, (x0 + 19) * k, 65 * k, fill=col, outline=col)
@@ -433,10 +481,14 @@ class MainWindow:
     def _clean_text(self):
         on = bool(self.clean_var.get())
         double = self.app.cfg["clean_trigger"] == "double"
+        factor = cleanup_comparison(provider=self.app.cfg["llm_provider"])["factor"]
         self.clean_hint.configure(
-            text=("An: Doppeltipp auf die Taste glättet den Text (roter Punkt)." if double
-                  else "An: glättet jeden Text und korrigiert Wörter.") if on
-            else f"Aus: Rohtext, bis zu 2x schneller und ca. {cleanup_comparison()['factor']:.0f}x günstiger.")
+            text=("An: 2x tippen = Feinschliff (roter Punkt), 3x tippen = Struktur mit To-dos (violett)." if double
+                  else "An: glättet jeden Text. 2x tippen = Struktur mit To-dos (violett).") if on
+            else f"Aus: Rohtext, bis zu 2x schneller und ca. {factor:.0f}x günstiger.")
+
+    def _on_translate(self):
+        self.app.set_translate(self.tr_lang.get() if self.tr_var.get() else "")
 
     def _power_text(self):
         on = bool(self.enabled_var.get())
@@ -448,6 +500,9 @@ class MainWindow:
         if self.built:
             self.enabled_var.set(bool(self.app.cfg["enabled"]))
             self.clean_var.set(bool(self.app.cfg["cleanup"]))
+            self.tr_var.set(bool(self.app.cfg["translate_to"]))
+            if self.app.cfg["translate_to"]:
+                self.tr_lang.set(self.app.cfg["translate_to"])
             self._power_text()
             self._clean_text()
 
@@ -470,7 +525,18 @@ class MainWindow:
     def _build_history(self):
         p = self.pages["Verlauf"]
         self._title(p, "Verlauf", "Klicke auf ein beliebiges Wort (oder markiere mehrere), um es zu verbessern und einem "
-                                  "Kontext zuzuordnen. SpeakIt lernt dazu.")
+                                  "Kontext zuzuordnen. SpeakIt lernt dazu. \"Glätten\" und \"Struktur\" wandeln "
+                                  "ein Diktat nachträglich um und kopieren das Ergebnis.")
+        bar = ctk.CTkFrame(p, fg_color="transparent")
+        bar.pack(fill="x", padx=34, pady=(0, 6))
+        self._search_job = None
+        # ohne textvariable, sonst zeigt customtkinter den Platzhalter nicht
+        self.search = ctk.CTkEntry(bar, height=36, corner_radius=10, font=self.f_n,
+                                   placeholder_text="Verlauf durchsuchen …", fg_color=CARD, border_color=LINE,
+                                   text_color=TXT)
+        self.search.pack(side="left", fill="x", expand=True)
+        self.search.bind("<KeyRelease>", lambda _e: self._search_soon())
+        self._btn(bar, "Exportieren", self._export, primary=False).pack(side="left", padx=(10, 0))
         self.hist = ctk.CTkScrollableFrame(p, fg_color=BG, corner_radius=0)
         self.hist.pack(fill="both", expand=True, padx=22, pady=(0, 8))
 
@@ -478,12 +544,14 @@ class MainWindow:
         self.dirty.discard("Verlauf")
         for w in self.hist.winfo_children():
             w.destroy()
-        rows = self.app.history.recent(self.hist_limit)
+        query = self.search.get()
+        rows = self.app.history.recent(self.hist_limit, query=query)
         if not rows:
             c = ctk.CTkFrame(self.hist, fg_color=CARD, corner_radius=16, border_width=1, border_color=LINE)
             c.pack(fill="x", padx=12, pady=8)
-            ctk.CTkLabel(c, text=f"Noch kein Diktat. Halte {pretty(self.app.cfg['hotkey'])} und sprich.",
-                         font=self.f_n, text_color=MUT).pack(padx=20, pady=26)
+            msg = (f"Nichts gefunden für \"{query.strip()}\"." if query.strip()
+                   else f"Noch kein Diktat. Halte {pretty(self.app.cfg['hotkey'])} und sprich.")
+            ctk.CTkLabel(c, text=msg, font=self.f_n, text_color=MUT).pack(padx=20, pady=26)
             return
         last_day = ""
         for row in rows:
@@ -499,6 +567,53 @@ class MainWindow:
         self.hist_limit += 30
         self.refresh_history()
 
+    def _search_soon(self):
+        """Erst suchen, wenn kurz nicht getippt wurde (sonst baut jeder Buchstabe die Liste neu auf)."""
+        if self._search_job:
+            self.root.after_cancel(self._search_job)
+        self.hist_limit = 30
+        self._search_job = self.root.after(250, self.refresh_history)
+
+    def _export(self):
+        query = self.search.get()
+        rows = self.app.history.recent(100000, query=query)
+        if not rows:
+            return
+        path = filedialog.asksaveasfilename(
+            parent=self.root, title="Verlauf exportieren", defaultextension=".md",
+            initialfile=f"SpeakIt-Verlauf-{datetime.date.today():%Y-%m-%d}.md",
+            filetypes=[("Markdown", "*.md"), ("Text", "*.txt")])
+        if path:
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(export_markdown(rows))
+
+    def _convert(self, row, mode, btn):
+        """Diktat nachträglich glätten oder strukturieren (im Hintergrund), Ergebnis speichern und kopieren."""
+        from .cleanup import process
+        btn.configure(text="…")
+        src = (row["raw"] or "").split("\n\n[Markierung]\n")[0]
+        lang = self.app.cfg["translate_to"]
+
+        def work():
+            text, prov, t_in, t_out = process(mode, preclean(src), self.app.cfg, self.app.contexts.llm_context(),
+                                              "", lang)
+
+            def done():
+                if not prov:
+                    short = mode == "clean" and not lang and len(src.split()) < 6
+                    btn.configure(text="Zu kurz" if short else "Fehler")
+                    self.root.after(1800, self.refresh_history)
+                    return
+                stored = mode + (f"+{lang}" if lang else "")
+                self.app.history.update_text(row["id"], text, stored, t_in, t_out, llm_cost(t_in, t_out, prov))
+                self.root.clipboard_clear()
+                self.root.clipboard_append(text)
+                self.dirty.add("Statistik")
+                self.refresh_history()
+                self.refresh_mini()
+            self.ui.call(done)
+        threading.Thread(target=work, daemon=True).start()
+
     def _card(self, row):
         c = ctk.CTkFrame(self.hist, fg_color=CARD, corner_radius=16, border_width=1, border_color=LINE)
         c.pack(fill="x", padx=12, pady=5)
@@ -509,6 +624,12 @@ class MainWindow:
         tok = (row["tok_in"] or 0) + (row["tok_out"] or 0)
         meta = f"{words} Wörter · {int(row['audio_s'])} s" + (f" · {tok} Token" if tok else "")
         ctk.CTkLabel(top, text=t, font=self.f_h, text_color=TXT).pack(side="left")
+        label = mode_label(row.get("mode", ""))
+        if label:
+            base = (row.get("mode") or "").partition("+")[0]
+            col = {"structure": VIOLET, "rewrite": BLUE}.get(base, RED)
+            ctk.CTkLabel(top, text=f" {label} ", font=self.f_s, text_color="white", fg_color=col,
+                         corner_radius=8, height=20).pack(side="left", padx=(8, 0))
         ctk.CTkLabel(top, text="  " + meta, font=self.f_s, text_color=MUT).pack(side="left")
         tw = tk.Text(c, wrap="word", relief="flat", borderwidth=0, highlightthickness=0, bg=CARD, fg=TXT,
                      font=("Segoe UI", -round(16 * dpi_scale())), cursor="hand2", padx=0, pady=0, spacing1=2, spacing3=2,
@@ -542,6 +663,15 @@ class MainWindow:
         raw_btn = LiquidButton(top, text="Original", command=toggle, width=74, height=28, bg=CARD, fg=MUT,
                                fg_active=TXT, font=("Segoe UI", 12), radius=9, hover=0.5)
         raw_btn.pack(side="right")
+        base_mode = (row.get("mode") or "").partition("+")[0]
+        if base_mode != "rewrite":
+            for text, mode in (("Struktur", "structure"), ("Glätten", "clean")):
+                if mode == base_mode:
+                    continue
+                b = LiquidButton(top, text=text, command=None, width=74, height=28, bg=CARD, fg=MUT,
+                                 fg_active=TXT, font=("Segoe UI", 12), radius=9, hover=0.5)
+                b.configure(command=lambda m=mode, b=b: self._convert(row, m, b))
+                b.pack(side="right", padx=(0, 4))
         tw.pack(fill="x", padx=16, pady=(8, 14))
         fill()
         tw.tag_configure("hov", underline=True, background="#EFE9DA")
@@ -851,11 +981,41 @@ class MainWindow:
             return make
 
         self.w_mode = row("Bedienung", opt(list(MODES), next(k for k, v in MODES.items() if v == cfg["mode"])))
-        self.w_trig = row("Feinschliff (Claude)", opt(list(TRIGGERS), next(
+        self.w_trig = row("Feinschliff (KI)", opt(list(TRIGGERS), next(
             (k for k, v in TRIGGERS.items() if v == cfg["clean_trigger"]), "Nur per Doppeltipp")))
-        ctk.CTkLabel(card, text="Doppeltipp: Taste zweimal schnell drücken (im Modus \"Halten\": kurz tippen, dann halten). "
-                                "Der Punkt in der Anzeige wird rot und der Text wird von Claude geglättet. Einfaches "
-                                "Drücken bleibt schnell und kostenlos. Gut für Bücher und Mails, unnötig für Chats.",
+        ctk.CTkLabel(card, text="2x tippen: Taste zweimal schnell drücken (im Modus \"Halten\": kurz tippen, dann halten). "
+                                "Der Punkt wird rot und die KI glättet den Text. 3x tippen: der Punkt wird violett und "
+                                "SpeakIt macht eine Struktur daraus (Kernaussage, Stichpunkte, To-dos). Einfaches Drücken "
+                                "bleibt schnell und kostenlos.",
+                     font=self.f_s, text_color=MUT, wraplength=620, justify="left").pack(anchor="w", padx=20, pady=(0, 6))
+        self.w_llm = row("KI-Anbieter", opt(list(PROVIDERS), next(
+            (k for k, v in PROVIDERS.items() if v == cfg["llm_provider"]), next(iter(PROVIDERS)))))
+        self.w_gmodel = row("Groq-Modell", opt(GROQ_MODELS if cfg["groq_model"] in GROQ_MODELS
+                                               else GROQ_MODELS + [cfg["groq_model"]], cfg["groq_model"]))
+        ctk.CTkLabel(card, text="Groq nutzt denselben Key wie die Spracherkennung und ist im Gratis-Tarif kostenlos "
+                                "(mit Minuten- und Tageslimit). Claude Haiku ist bei Deutsch etwas genauer und kostet ein "
+                                "paar Cent. Fällt der gewählte Anbieter aus, springt der andere ein, wenn dafür ein Key "
+                                "hinterlegt ist.",
+                     font=self.f_s, text_color=MUT, wraplength=620, justify="left").pack(anchor="w", padx=20, pady=(0, 6))
+        self.w_fmt = row("Struktur-Format", opt(list(FORMATS), next(
+            (k for k, v in FORMATS.items() if v == cfg["structure_format"]), next(iter(FORMATS)))))
+        self.w_tr = row("Übersetzen nach", opt(["Aus"] + TARGETS, cfg["translate_to"] or "Aus"))
+        ctk.CTkLabel(card, text="Übersetzen gilt für jede Aufnahme, auch für 1x tippen (dann mit KI). "
+                                "Schneller Schalter: links in der Seitenleiste oder im Tray.",
+                     font=self.f_s, text_color=MUT, wraplength=620, justify="left").pack(anchor="w", padx=20, pady=(0, 6))
+        self.rw_hotkey = list(cfg["rewrite_hotkey"])
+        self.rw_var = ctk.StringVar(value=pretty(self.rw_hotkey))
+        rw_row = ctk.CTkFrame(card, fg_color="transparent")
+        rw_row.pack(fill="x", padx=20, pady=7)
+        ctk.CTkLabel(rw_row, text="Umschreiben-Taste", font=self.f_n, text_color=TXT, width=190, anchor="w").pack(side="left")
+        LiquidButton(rw_row, textvariable=self.rw_var, command=self._capture_rw, width=230, height=36, bg=CARD,
+                     fill=BG, border=LINE, fg=TXT, fg_active=TXT, font=("Segoe UI", 13), radius=10,
+                     hover=0.5).pack(side="left")
+        self.v_rw = ctk.BooleanVar(value=bool(cfg["rewrite_enabled"]))
+        ctk.CTkSwitch(rw_row, text="", variable=self.v_rw, progress_color=ORANGE, width=44).pack(side="left", padx=10)
+        ctk.CTkLabel(card, text="Text markieren, Umschreiben-Taste halten (oder tippen) und sagen, was passieren soll, "
+                                "z. B. \"kürzer\", \"freundlicher\", \"als Liste\" oder \"auf Englisch\". Der markierte "
+                                "Text wird ersetzt. Der Punkt in der Anzeige ist dabei blau.",
                      font=self.f_s, text_color=MUT, wraplength=620, justify="left").pack(anchor="w", padx=20, pady=(0, 6))
         self.w_lang = row("Sprache", opt(list(LANGS), next((k for k, v in LANGS.items() if v == cfg["language"]), "Deutsch")))
         try:
@@ -884,21 +1044,23 @@ class MainWindow:
 
         cr = ctk.CTkFrame(card, fg_color="transparent")
         cr.pack(fill="x", padx=20, pady=7)
-        ctk.CTkLabel(cr, text="Textnachbearbeitung (Claude)", font=self.f_n, text_color=TXT, width=190, anchor="w",
+        ctk.CTkLabel(cr, text="Textnachbearbeitung (KI)", font=self.f_n, text_color=TXT, width=190, anchor="w",
                      wraplength=180, justify="left").pack(side="left")
         ctk.CTkSwitch(cr, text="Aus = bis zu 2x schneller, dafür Rohtext ohne Glättung", variable=self.clean_var,
                       command=self._on_clean, progress_color=ORANGE, font=self.f_s, text_color=MUT).pack(side="left")
-        cmp_ = cleanup_comparison()
+        prov = cfg["llm_provider"]
+        cmp_ = cleanup_comparison(provider=prov)
+        ai = "Groq" if prov == "groq" else "Haiku"
         (n_s, s_with, s_without), (n_l, l_with, l_without) = WAIT["short"], WAIT["long"]
         de = lambda x: f"{x:.2f}".replace(".", ",")  # noqa: E731
         de1 = lambda x: f"{x:.1f}".replace(".", ",")  # noqa: E731
         ctk.CTkLabel(
             card, font=self.f_s, text_color=MUT, wraplength=640, justify="left",
-            text=(f"Vergleich (Schätzung, Listenpreise): 10.000 Wörter diktiert (ca. {cmp_['n']} Diktate) kosten mit Haiku "
-                  f"ca. {de(cmp_['with'])} $ (Groq {de(cmp_['groq'])} $ + Haiku {de(cmp_['haiku'])} $), ohne Haiku "
-                  f"ca. {de(cmp_['without'])} $. Das sind ca. {cmp_['factor']:.0f}x weniger.\n"
-                  f"Wartezeit nach dem Loslassen: ein Satz ({n_s} Wörter) mit Haiku ca. {de1(s_with)} s, ohne ca. "
-                  f"{de1(s_without)} s. Ein Absatz ({n_l} Wörter) mit Haiku ca. {de1(l_with)} s, ohne ca. "
+            text=(f"Vergleich (Schätzung, Listenpreise, im Groq-Gratis-Tarif 0 $): 10.000 Wörter diktiert (ca. {cmp_['n']} "
+                  f"Diktate) kosten mit KI ({ai}) ca. {de(cmp_['with'])} $ (Whisper {de(cmp_['groq'])} $ + {ai} "
+                  f"{de(cmp_['haiku'])} $), ohne KI ca. {de(cmp_['without'])} $.\n"
+                  f"Wartezeit nach dem Loslassen: ein Satz ({n_s} Wörter) mit KI ca. {de1(s_with)} s, ohne ca. "
+                  f"{de1(s_without)} s. Ein Absatz ({n_l} Wörter) mit KI ca. {de1(l_with)} s, ohne ca. "
                   f"{de1(l_without)} s."),
         ).pack(anchor="w", padx=20, pady=(0, 8))
         self.v_sounds = sw("Töne", cfg["sounds"])
@@ -908,7 +1070,7 @@ class MainWindow:
         keys = ctk.CTkFrame(sc, fg_color=CARD, corner_radius=16, border_width=1, border_color=LINE)
         keys.pack(fill="x", padx=12, pady=6)
         self.key_entries = {}
-        for label, name in (("Groq API-Key", "GROQ_API_KEY"), ("Anthropic API-Key", "ANTHROPIC_API_KEY"),
+        for label, name in (("Groq API-Key", "GROQ_API_KEY"), ("Anthropic API-Key (optional)", "ANTHROPIC_API_KEY"),
                             ("OpenAI API-Key (optional)", "OPENAI_API_KEY")):
             r = ctk.CTkFrame(keys, fg_color="transparent")
             r.pack(fill="x", padx=20, pady=7)
@@ -941,6 +1103,17 @@ class MainWindow:
 
         self.app.hk.start_capture(done)
 
+    def _capture_rw(self):
+        self.rw_var.set("Taste(n) drücken, dann loslassen …")
+
+        def done(keys):
+            def apply():
+                self.rw_hotkey[:] = keys
+                self.rw_var.set(pretty(keys))
+            self.ui.call(apply)
+
+        self.app.hk.start_capture(done)
+
     def _copilot(self):
         self.hotkey[:] = COPILOT_KEY
         self.hk_var.set(pretty(COPILOT_KEY))
@@ -952,8 +1125,11 @@ class MainWindow:
             hotkey=list(self.hotkey), mode=MODES[self.w_mode.var.get()], language=LANGS[self.w_lang.var.get()],
             mic="" if mic == "Standard" else mic, clean_trigger=TRIGGERS[self.w_trig.var.get()], stt_provider=self.w_prov.var.get(),
             cleanup=bool(self.clean_var.get()), sounds=self.v_sounds.get(), done_sound=self.v_done.get(),
-            sound_preset=self.snd_var.get(),
+            sound_preset=self.snd_var.get(), llm_provider=PROVIDERS[self.w_llm.var.get()],
+            groq_model=self.w_gmodel.var.get(), structure_format=FORMATS[self.w_fmt.var.get()],
         )
+        tr = self.w_tr.var.get()
+        self.app.set_translate("" if tr == "Aus" else tr)
         save_env({k: e.get().strip() for k, e in self.key_entries.items() if e.get().strip()})
         if self.v_auto.get() != autostart.is_enabled():
             autostart.set_enabled(self.v_auto.get())
@@ -962,6 +1138,14 @@ class MainWindow:
             self.set_msg.configure(text="Gespeichert", text_color=GREEN)
         except ValueError:
             self.set_msg.configure(text="Taste unbekannt", text_color=RED)
+        from .hotkey import normalize
+        if sorted(map(normalize, self.rw_hotkey)) == sorted(map(normalize, self.hotkey)):
+            self.set_msg.configure(text="Umschreiben-Taste muss anders sein als die Diktier-Taste", text_color=RED)
+        else:
+            try:
+                self.app.set_rewrite(self.v_rw.get(), self.rw_hotkey)
+            except ValueError:
+                self.set_msg.configure(text="Umschreiben-Taste unbekannt", text_color=RED)
         self.app.refresh_tray()
         self.side_info.configure(text=f"Taste: {pretty(cfg['hotkey'])}  ·  Version {VERSION}")
         self._clean_text()

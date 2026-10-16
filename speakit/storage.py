@@ -13,6 +13,8 @@ from .config import CONTEXTS_PATH, HISTORY_PATH
 GROQ_PER_HOUR = 0.04
 OPENAI_PER_MIN = 0.003
 HAIKU_IN, HAIKU_OUT = 1.0 / 1e6, 5.0 / 1e6
+GROQ_LLM_IN, GROQ_LLM_OUT = 0.15 / 1e6, 0.60 / 1e6  # gpt-oss-120b Listenpreis (im Gratis-Tarif 0 $)
+LLM_PRICES = {"claude": (HAIKU_IN, HAIKU_OUT), "groq": (GROQ_LLM_IN, GROQ_LLM_OUT)}
 
 
 def stt_cost(provider: str, secs: float) -> float:
@@ -21,16 +23,18 @@ def stt_cost(provider: str, secs: float) -> float:
     return max(secs, 10) / 3600 * GROQ_PER_HOUR
 
 
-def llm_cost(tok_in: int, tok_out: int) -> float:
-    return tok_in * HAIKU_IN + tok_out * HAIKU_OUT
+def llm_cost(tok_in: int, tok_out: int, provider: str = "claude") -> float:
+    p_in, p_out = LLM_PRICES.get(provider, LLM_PRICES["claude"])
+    return tok_in * p_in + tok_out * p_out
 
 
-def cleanup_comparison(words=10000, per_dictation=125, overhead_tok=2500, wpm=140):
-    """Schätzung: Kosten pro `words` Wörter mit und ohne Haiku (overhead_tok = Prompt + Begriffslisten pro Diktat)."""
+def cleanup_comparison(words=10000, per_dictation=125, overhead_tok=2500, wpm=140, provider="claude"):
+    """Schätzung: Kosten pro `words` Wörter mit und ohne KI (overhead_tok = Prompt + Begriffslisten pro Diktat)."""
     groq = words / wpm / 60 * GROQ_PER_HOUR
     n = words / per_dictation
     text_tok = words * 1.5
-    haiku = (n * overhead_tok + text_tok) * HAIKU_IN + text_tok * HAIKU_OUT
+    p_in, p_out = LLM_PRICES.get(provider, LLM_PRICES["claude"])
+    haiku = (n * overhead_tok + text_tok) * p_in + text_tok * p_out
     return {"n": int(n), "groq": groq, "haiku": haiku, "with": groq + haiku, "without": groq,
             "factor": (groq + haiku) / groq}
 
@@ -283,6 +287,9 @@ class History:
                 "CREATE TABLE IF NOT EXISTS dictations (id INTEGER PRIMARY KEY AUTOINCREMENT, ts REAL, "
                 "raw TEXT, text TEXT, audio_s REAL, tok_in INTEGER, tok_out INTEGER, cost REAL)"
             )
+            cols = {r[1] for r in db.execute("PRAGMA table_info(dictations)")}
+            if "mode" not in cols:  # ab Ä54: raw | clean | structure | rewrite, optional "+Sprache"
+                db.execute("ALTER TABLE dictations ADD COLUMN mode TEXT DEFAULT ''")
 
     @contextlib.contextmanager
     def _db(self):
@@ -294,26 +301,39 @@ class History:
         finally:
             db.close()
 
-    def add(self, raw, text, audio_s, tok_in, tok_out, cost, ts=None) -> int:
+    def add(self, raw, text, audio_s, tok_in, tok_out, cost, ts=None, mode="") -> int:
         with self.lock, self._db() as db:
             cur = db.execute(
-                "INSERT INTO dictations (ts, raw, text, audio_s, tok_in, tok_out, cost) VALUES (?,?,?,?,?,?,?)",
-                (ts if ts is not None else time.time(), raw, text, audio_s, tok_in, tok_out, cost),
+                "INSERT INTO dictations (ts, raw, text, audio_s, tok_in, tok_out, cost, mode) VALUES (?,?,?,?,?,?,?,?)",
+                (ts if ts is not None else time.time(), raw, text, audio_s, tok_in, tok_out, cost, mode),
             )
             return cur.lastrowid
 
-    def recent(self, limit=40, offset=0) -> list[dict]:
+    KEYS = ("id", "ts", "raw", "text", "audio_s", "tok_in", "tok_out", "cost", "mode")
+
+    def recent(self, limit=40, offset=0, query="") -> list[dict]:
+        """Neueste zuerst. `query` filtert (Groß/klein egal) in Text und Original."""
+        where, args = "", []
+        if query.strip():
+            like = "%" + query.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+            where, args = "WHERE text LIKE ? ESCAPE '\\' OR raw LIKE ? ESCAPE '\\'", [like, like]
         with self.lock, self._db() as db:
             rows = db.execute(
-                "SELECT id, ts, raw, text, audio_s, tok_in, tok_out, cost FROM dictations "
-                "ORDER BY id DESC LIMIT ? OFFSET ?", (limit, offset),
+                f"SELECT {', '.join(self.KEYS)} FROM dictations {where} ORDER BY id DESC LIMIT ? OFFSET ?",
+                (*args, limit, offset),
             ).fetchall()
-        keys = ("id", "ts", "raw", "text", "audio_s", "tok_in", "tok_out", "cost")
-        return [dict(zip(keys, r)) for r in rows]
+        return [dict(zip(self.KEYS, r)) for r in rows]
 
-    def update_text(self, did, text):
+    def update_text(self, did, text, mode=None, add_tok_in=0, add_tok_out=0, add_cost=0.0):
+        """Text ersetzen (Korrektur oder nachträgliches Umwandeln). Token und Kosten des Umwandelns kommen dazu."""
         with self.lock, self._db() as db:
-            db.execute("UPDATE dictations SET text=? WHERE id=?", (text, did))
+            if mode is None:
+                db.execute("UPDATE dictations SET text=? WHERE id=?", (text, did))
+            else:
+                db.execute(
+                    "UPDATE dictations SET text=?, mode=?, tok_in=COALESCE(tok_in,0)+?, tok_out=COALESCE(tok_out,0)+?, "
+                    "cost=COALESCE(cost,0)+? WHERE id=?", (text, mode, add_tok_in, add_tok_out, add_cost, did),
+                )
 
     def delete(self, did):
         with self.lock, self._db() as db:
@@ -327,3 +347,27 @@ class History:
                 "FROM dictations WHERE ts>=?", (since,),
             ).fetchone()
         return dict(count=r[0], audio_s=r[1], tok_in=r[2], tok_out=r[3], cost=r[4], words=r[5])
+
+
+MODE_LABELS = {"clean": "Feinschliff", "structure": "Struktur", "rewrite": "Umgeschrieben"}
+
+
+def mode_label(mode: str) -> str:
+    """'structure+Englisch' -> 'Struktur · Englisch'."""
+    base, _, lang = (mode or "").partition("+")
+    parts = [MODE_LABELS.get(base, "")] + ([lang] if lang else [])
+    return " · ".join(p for p in parts if p)
+
+
+def export_markdown(rows) -> str:
+    """Verlauf als Markdown, gruppiert nach Tag (älteste zuerst)."""
+    import datetime
+    out, day = ["# SpeakIt-Verlauf", ""], None
+    for r in sorted(rows, key=lambda r: r["ts"]):
+        dt = datetime.datetime.fromtimestamp(r["ts"])
+        if dt.date() != day:
+            day = dt.date()
+            out += [f"## {day:%d.%m.%Y}", ""]
+        label = mode_label(r.get("mode", ""))
+        out += [f"### {dt:%H:%M}" + (f" ({label})" if label else ""), "", (r["text"] or "").strip(), ""]
+    return "\n".join(out).rstrip() + "\n"

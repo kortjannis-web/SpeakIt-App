@@ -2,7 +2,7 @@
 
 Diktieren in jedes Textfeld unter Windows. Taste halten oder tippen, sprechen, Text erscheint.
 
-Ablauf: Mikrofon → Groq Whisper (Text) → kostenlose Vorreinigung (Füllwörter, Doppler) → bei Doppeltipp Claude Haiku (Satzbau, Zeichensetzung, Kontextkorrektur) → Einfügen per Strg+V.
+Ablauf: Mikrofon → Groq Whisper (Text) → kostenlose Vorreinigung (Füllwörter, Doppler) → bei 2x Tippen Feinschliff, bei 3x Tippen Struktur-Notiz mit To-dos (KI: Groq gratis oder Claude Haiku) → Einfügen per Strg+V.
 
 ## Installation aus dem Quellcode (einmalig)
 
@@ -21,9 +21,9 @@ Ab dann startet es bei jeder Windows-Anmeldung unsichtbar im Hintergrund.
 
 **Groq (Sprache zu Text)**: console.groq.com → API Keys → Create API Key (`gsk_…`). Der Gratis-Tarif reicht für private Nutzung, ein Modell muss nicht gewählt werden.
 
-**Anthropic (Textnachbearbeitung)**: console.anthropic.com → Billing: Guthaben aufladen und Monatslimit setzen → API Keys → Create Key (`sk-ant-…`).
+Der Groq-Key reicht auch für Feinschliff, Struktur, Übersetzen und Umschreiben: Groq bietet neben Whisper Sprachmodelle an (Standard `openai/gpt-oss-120b`), im Gratis-Tarif kostenlos mit Minuten- und Tageslimit. Eine zusätzliche App oder ein weiterer Key ist nicht nötig.
 
-Ohne Anthropic-Key funktioniert SpeakIt weiter, nur ohne Glättung und Kontextkorrektur.
+**Anthropic (optional)**: console.anthropic.com → Billing: Guthaben aufladen und Monatslimit setzen → API Keys → Create Key (`sk-ant-…`). Unter Einstellungen → "KI-Anbieter" lässt sich Claude Haiku statt Groq wählen. Ist für beide Anbieter ein Key hinterlegt, springt der andere automatisch ein, wenn einer ausfällt oder das Limit erreicht ist.
 
 ## Bedienung
 
@@ -31,7 +31,27 @@ Ohne Anthropic-Key funktioniert SpeakIt weiter, nur ohne Glättung und Kontextko
 |---|---|
 | Taste halten | Aufnahme läuft, beim Loslassen wird eingefügt |
 | Taste kurz tippen | Aufnahme startet, nochmal tippen stoppt |
+| 2x schnell tippen | Feinschliff durch die KI (roter Punkt) |
+| 3x schnell tippen | Struktur: Kernaussage, Stichpunkte, To-dos (violetter Punkt) |
+| Umschalt + F9 (einstellbar) | Markierten Text per Sprachanweisung umschreiben ("kürzer", "freundlicher", "auf Englisch"), blauer Punkt |
 | Esc während Aufnahme | Abbrechen |
+
+Im Modus "Halten" gilt: kurz tippen, dann halten = Feinschliff; zweimal tippen, dann halten = Struktur.
+
+**Struktur-Notiz** (3x tippen) aus "ähm also ich muss bis Freitag noch das Angebot an Müller schicken und äh das Logo fehlt noch":
+```
+**Kernaussage:** Angebot für Müller bis Freitag fertigstellen.
+
+**Punkte**
+- Logo fehlt noch
+
+**To-dos**
+- [ ] Angebot an Müller bis Freitag schicken
+- [ ] Logo besorgen
+```
+Für Word oder Outlook unter Einstellungen → "Struktur-Format" auf Klartext stellen (• und ☐ statt Markdown).
+
+**Übersetzen**: Schalter links in der Seitenleiste (oder im Tray). Jedes Diktat wird direkt in der gewählten Sprache eingefügt (Englisch, Französisch, Spanisch, …).
 
 - Die Taste ist komplett belegt (`M` oder `F11` tippt nichts mehr). Bei Kombinationen wird nur die letzte Taste geschluckt.
 - **Copilot-Taste**: Einstellungen → "Copilot-Taste" (sendet Win + Umschalt + F23, F23 wird geschluckt).
@@ -49,17 +69,19 @@ Unten mittig fährt eine kleine Kapsel aus der Mitte auf: oranger Punkt (schwabb
 ## Fenster
 
 - **Schalter links oben**: SpeakIt an/aus. Aus heißt, die Taste wird nicht mehr abgefangen. Auch im Tray ("SpeakIt aktiv").
-- **Nachbearbeitung** (zweiter Schalter): Claude Haiku glättet den Text. Standard: nur nach **Doppeltipp** auf die Taste (im Modus "Halten": kurz tippen, dann halten), der Punkt in der Anzeige wird dann rot. Einfaches Drücken bleibt schnell und kostenlos. In den Einstellungen unter "Feinschliff (Claude)" auf "Bei jeder Aufnahme" umstellbar. Unter 6 Wörtern wird nie Haiku gefragt, und es gehen nur Begriffe mit, die im Diktat vorkommen oder ähnlich klingen.
-- **Verlauf**: letzte Diktate, kopieren, "Original" ansehen. Jedes Wort ist anklickbar (oder mehrere markieren): richtiges Wort eintragen, Kontext wählen, SpeakIt ersetzt es künftig automatisch.
+- **Nachbearbeitung** (zweiter Schalter): die KI glättet den Text. Standard: nur nach **Doppeltipp** auf die Taste (im Modus "Halten": kurz tippen, dann halten), der Punkt in der Anzeige wird dann rot. **Dreifachtipp** macht eine Struktur-Notiz (violetter Punkt). Einfaches Drücken bleibt schnell und kostenlos. In den Einstellungen unter "Feinschliff (KI)" auf "Bei jeder Aufnahme" umstellbar (dann ergibt 2x Tippen die Struktur). Unter 6 Wörtern wird nie geglättet, und es gehen nur Begriffe mit, die im Diktat vorkommen oder ähnlich klingen. Aus = kein Mehrfach-Tippen, nur Rohtext.
+- **Übersetzen** (dritter Schalter): Zielsprache wählen, jedes Diktat kommt übersetzt an.
+- **Verlauf**: letzte Diktate, durchsuchen, als Markdown exportieren, kopieren, "Original" ansehen. "Glätten" und "Struktur" wandeln ein altes Diktat nachträglich um und kopieren das Ergebnis. Jedes Wort ist anklickbar (oder mehrere markieren): richtiges Wort eintragen, Kontext wählen, SpeakIt ersetzt es künftig automatisch.
 - **Kontexte**: Themen mit Begriffen und festen Korrekturen (Re:Zero, Fantasy, Webdesign, SEO & GEO, Business, KI & Cloud, eigene). Aktive gehen an Whisper und Claude, inaktive kennt Claude und nutzt sie nur bei passendem Thema.
-- **Statistik**: Diktate, Wörter, Sprechzeit, Token, Kosten für Heute, Monat, Gesamt. Heute setzt sich um 0 Uhr zurück, Monat am 1., Gesamt nie. Links unten steht es immer. Test: `python -m unittest tests.test_stats`.
-- **Einstellungen**: Taste oder Tastenkombination, Modus, Sprache, Mikrofon, Anbieter, 8 Klang-Presets (Sanft, Blub, Tropfen, Klack, Marimba, Glas, Pop, Pad), Autostart, Keys.
+- **Statistik**: Diktate, Wörter, Sprechzeit, Token, Kosten für Heute, Monat, Gesamt. Heute setzt sich um 0 Uhr zurück, Monat am 1., Gesamt nie. Links unten steht es immer. Tests: `python -m unittest tests.test_stats tests.test_modes`.
+- **Einstellungen**: Taste oder Tastenkombination, Umschreiben-Taste, Modus, KI-Anbieter (Groq/Claude) und Groq-Modell, Struktur-Format, Übersetzen, Sprache, Mikrofon, Anbieter, 8 Klang-Presets (Sanft, Blub, Tropfen, Klack, Marimba, Glas, Pop, Pad), Autostart, Keys.
 - **Tutorial**: öffnet sich beim ersten Start, danach über "Tutorial anzeigen" links unten.
 
 ## Kosten (Listenpreise aus dem Gedächtnis, vor Nutzung prüfen)
 
 - Groq whisper-large-v3-turbo: ca. 0,04 $ pro Stunde Audio (Gratis-Tarif mit Limits)
-- Claude Haiku 4.5: ca. 1 $ pro Mio. Eingabe-Token, 5 $ pro Mio. Ausgabe-Token
+- Groq gpt-oss-120b (Feinschliff/Struktur, Standard): ca. 0,15 $ pro Mio. Eingabe-Token, 0,60 $ pro Mio. Ausgabe-Token, im Gratis-Tarif 0 $
+- Claude Haiku 4.5 (optional): ca. 1 $ pro Mio. Eingabe-Token, 5 $ pro Mio. Ausgabe-Token
 - Pro Diktat gehen Prompt und Begriffslisten mit (ca. 2.000 bis 3.000 Token): grob 0,3 bis 0,5 Cent pro Minute Sprechen
 
 ## Installation in einem Schritt (empfohlen, kostenlos)

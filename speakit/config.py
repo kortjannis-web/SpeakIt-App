@@ -26,6 +26,12 @@ DEFAULTS = {
     "cleanup": True,
     "clean_trigger": "double",  # double = nur nach Doppeltipp | always = jede Aufnahme
     "cleanup_model": "claude-haiku-4-5-20251001",
+    "llm_provider": "groq",  # groq (gpt-oss, Gratis-Kontingent) | claude; der andere springt bei Fehlern ein
+    "groq_model": "openai/gpt-oss-120b",
+    "structure_format": "markdown",  # markdown | plain (Struktur-Notiz für Word/Outlook ohne Sternchen)
+    "translate_to": "",  # "" = aus, sonst Zielsprache (z. B. "Englisch")
+    "rewrite_hotkey": ["shift", "f9"],  # markierten Text per Sprachanweisung umschreiben
+    "rewrite_enabled": True,
     "sounds": True,
     "done_sound": True,  # Plop, sobald der Text fertig ist
     "sound_preset": "Sanft",
